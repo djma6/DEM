@@ -82,22 +82,75 @@ export default function DJApp() {
 
   // Init
   useEffect(() => {
-    const saved = localStorage.getItem("djProfile");
-    if (saved) { setProfile(JSON.parse(saved)); } else { setShowSetup(true); }
+    try {
+      const saved = localStorage.getItem("djProfile");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed.name) {
+          setProfile(parsed);
+          setShowSetup(false);
+          return;
+        }
+      }
+    } catch (e) {
+      console.error("Failed to parse djProfile from localStorage", e);
+    }
+    setShowSetup(true);
   }, []);
 
   const handleSetupSubmit = () => {
-    if (profile.name.trim()) { localStorage.setItem("djProfile", JSON.stringify(profile)); setShowSetup(false); }
+    if (profile.name.trim()) {
+      localStorage.setItem("djProfile", JSON.stringify(profile));
+      setShowSetup(false);
+    }
   };
 
   const fetchEvents = useCallback(async () => {
-    try { const r = await fetch("/api/events"); const d = await r.json(); setEvents(d.events); setStats(d.stats); } catch (e) { console.error(e); } finally { setLoading(false); }
+    try {
+      const r = await fetch("/api/events");
+      if (r.ok) {
+        const d = await r.json();
+        setEvents(Array.isArray(d.events) ? d.events : []);
+        if (d.stats) setStats(d.stats);
+      } else {
+        setEvents([]);
+      }
+    } catch (e) {
+      console.error("Fetch events failed:", e);
+      setEvents([]);
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
   const fetchReminders = useCallback(async () => {
-    try { const r = await fetch("/api/reminders"); setReminders(await r.json()); } catch (e) { console.error(e); }
+    try {
+      const r = await fetch("/api/reminders");
+      if (r.ok) {
+        const data = await r.json();
+        setReminders(Array.isArray(data) ? data : []);
+      } else {
+        setReminders([]);
+      }
+    } catch (e) {
+      console.error("Fetch reminders failed:", e);
+      setReminders([]);
+    }
   }, []);
+
   const fetchBankCards = useCallback(async () => {
-    try { const r = await fetch("/api/bank-cards"); setBankCards(await r.json()); } catch (e) { console.error(e); }
+    try {
+      const r = await fetch("/api/bank-cards");
+      if (r.ok) {
+        const data = await r.json();
+        setBankCards(Array.isArray(data) ? data : []);
+      } else {
+        setBankCards([]);
+      }
+    } catch (e) {
+      console.error("Fetch bank cards failed:", e);
+      setBankCards([]);
+    }
   }, []);
 
   useEffect(() => { if (!showSetup) { fetchEvents(); fetchReminders(); fetchBankCards(); } }, [fetchEvents, fetchReminders, fetchBankCards, showSetup]);
@@ -136,16 +189,18 @@ export default function DJApp() {
     const { year, month } = shamsiMonth; const ml = jalaaliMonthLength(year, month);
     const fg = toGregorian(year, month, 1); let sd = (new Date(fg.gy, fg.gm - 1, fg.gd).getDay() + 1) % 7;
     const days: CalendarDay[] = [];
+    const evList = Array.isArray(events) ? events : [];
     for (let d = 1; d <= ml; d++) { const ds = formatJalaaliDate(year, month, d); const g = toGregorian(year, month, d);
-      days.push({ day: d, isToday: ds === todayStr, hasEvents: events.some(e => e.shamsiDate === ds), holiday: getShamsiHoliday(month, d), gregorianHoliday: getGregorianHoliday(g.gm, g.gd), jy: year, jm: month, jd: d, gy: g.gy, gm: g.gm, gd: g.gd }); }
+      days.push({ day: d, isToday: ds === todayStr, hasEvents: evList.some(e => e.shamsiDate === ds), holiday: getShamsiHoliday(month, d), gregorianHoliday: getGregorianHoliday(g.gm, g.gd), jy: year, jm: month, jd: d, gy: g.gy, gm: g.gm, gd: g.gd }); }
     return { days, startDayOfWeek: sd };
   };
   const getGregorianCalendarDays = (): { days: CalendarDay[]; startDayOfWeek: number } => {
     const { year, month } = gregMonth; const ml = new Date(year, month, 0).getDate();
     let sd = (new Date(year, month - 1, 1).getDay() + 1) % 7;
     const days: CalendarDay[] = [];
+    const evList = Array.isArray(events) ? events : [];
     for (let d = 1; d <= ml; d++) { const gs = formatGregorianDate(year, month, d); let j; try { j = toJalaali(year, month, d); } catch { continue; }
-      days.push({ day: d, isToday: gs === todayGStr, hasEvents: events.some(e => e.gregorianDate === gs), holiday: getShamsiHoliday(j.jm, j.jd), gregorianHoliday: getGregorianHoliday(month, d), jy: j.jy, jm: j.jm, jd: j.jd, gy: year, gm: month, gd: d }); }
+      days.push({ day: d, isToday: gs === todayGStr, hasEvents: evList.some(e => e.gregorianDate === gs), holiday: getShamsiHoliday(j.jm, j.jd), gregorianHoliday: getGregorianHoliday(month, d), jy: j.jy, jm: j.jm, jd: j.jd, gy: year, gm: month, gd: d }); }
     return { days, startDayOfWeek: sd };
   };
   const prevMonth = () => { if (calendarType === "shamsi") setShamsiMonth(p => { let y = p.year, m = p.month - 1; if (m < 1) { m = 12; y--; } return { year: y, month: m }; }); else setGregMonth(p => { let y = p.year, m = p.month - 1; if (m < 1) { m = 12; y--; } return { year: y, month: m }; }); };
@@ -154,8 +209,8 @@ export default function DJApp() {
   const switchCalendarType = (nt: "shamsi" | "gregorian") => { if (nt === "gregorian") { const g = toGregorian(shamsiMonth.year, shamsiMonth.month, 15); setGregMonth({ year: g.gy, month: g.gm }); } else { const j = toJalaali(gregMonth.year, gregMonth.month, 15); setShamsiMonth({ year: j.jy, month: j.jm }); } setCalendarType(nt); };
   const handleMonthPick = (m: number) => { if (calendarType === "shamsi") setShamsiMonth(p => ({ ...p, month: m })); else setGregMonth(p => ({ ...p, month: m })); setShowMonthPicker(false); };
   const handleYearChange = (d: number) => { if (calendarType === "shamsi") setShamsiMonth(p => ({ ...p, year: p.year + d })); else setGregMonth(p => ({ ...p, year: p.year + d })); };
-  const handleDayClick = (di: CalendarDay) => { const ds = calendarType === "shamsi" ? formatJalaaliDate(di.jy, di.jm, di.jd) : formatGregorianDate(di.gy, di.gm, di.gd); const de = events.filter(e => e.shamsiDate === ds || e.gregorianDate === ds); if (de.length === 1) { setSelectedEvent(de[0]); setShowDetailModal(true); } else setSelectedDate(ds); };
-  const getMonthEvents = (): EventData[] => { if (calendarType === "shamsi") { const p = `${shamsiMonth.year}/${String(shamsiMonth.month).padStart(2, "0")}/`; return events.filter(e => e.shamsiDate.startsWith(p) && e.status !== "cancelled").sort((a, b) => a.shamsiDate.localeCompare(b.shamsiDate)); } else { const p = `${gregMonth.year}-${String(gregMonth.month).padStart(2, "0")}-`; return events.filter(e => e.gregorianDate.startsWith(p) && e.status !== "cancelled").sort((a, b) => a.gregorianDate.localeCompare(b.gregorianDate)); } };
+  const handleDayClick = (di: CalendarDay) => { const ds = calendarType === "shamsi" ? formatJalaaliDate(di.jy, di.jm, di.jd) : formatGregorianDate(di.gy, di.gm, di.gd); const evList = Array.isArray(events) ? events : []; const de = evList.filter(e => e.shamsiDate === ds || e.gregorianDate === ds); if (de.length === 1) { setSelectedEvent(de[0]); setShowDetailModal(true); } else setSelectedDate(ds); };
+  const getMonthEvents = (): EventData[] => { const evList = Array.isArray(events) ? events : []; if (calendarType === "shamsi") { const p = `${shamsiMonth.year}/${String(shamsiMonth.month).padStart(2, "0")}/`; return evList.filter(e => e.shamsiDate.startsWith(p) && e.status !== "cancelled").sort((a, b) => a.shamsiDate.localeCompare(b.shamsiDate)); } else { const p = `${gregMonth.year}-${String(gregMonth.month).padStart(2, "0")}-`; return evList.filter(e => e.gregorianDate.startsWith(p) && e.status !== "cancelled").sort((a, b) => a.gregorianDate.localeCompare(b.gregorianDate)); } };
 
   // Form
   const openNewEventForm = (date?: string) => { setEditingEvent(null); const sd = date || todayStr; const p = sd.split("/"); const g = toGregorian(parseInt(p[0]), parseInt(p[1]), parseInt(p[2])); setFormData({ eventType: "wedding", title: "", shamsiDate: sd, gregorianDate: formatGregorianDate(g.gy, g.gm, g.gd), venue: "", location: "", fee: 0, deposit: 0, equipmentNeeded: "", soundLightProvider: "", soundLightProviderPhone: "", soundLightRequirements: "", soundLightCost: 0, soundLightEnabled: false, description: "", customerName: "", customerPhone: "", guestCount: 0, status: "pending" }); setFormStep(0); setShowEventModal(true); };
@@ -183,10 +238,12 @@ export default function DJApp() {
   const handleSaveCard = async () => { try { await fetch("/api/bank-cards", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(bankCardForm) }); setShowBankCardModal(false); setBankCardForm({ title: "", cardNumber: "" }); fetchBankCards(); } catch (e) { console.error(e); } };
   const handleDeleteCard = async (id: number) => { try { await fetch(`/api/bank-cards/${id}`, { method: "DELETE" }); fetchBankCards(); } catch (e) { console.error(e); } };
 
-  const filteredEvents = filterStatus === "all" ? events : events.filter(e => e.status === filterStatus);
+  const evList = Array.isArray(events) ? events : [];
+  const remList = Array.isArray(reminders) ? reminders : [];
+  const filteredEvents = filterStatus === "all" ? evList : evList.filter(e => e.status === filterStatus);
   const formSteps = [ { title: locale === "fa" ? "اطلاعات اصلی" : "Basic Info", icon: <FileText size={18} /> }, { title: locale === "fa" ? "مشتری" : "Customer", icon: <Users size={18} /> }, { title: locale === "fa" ? "مالی" : "Financial", icon: <DollarSign size={18} /> }, { title: locale === "fa" ? "صوت و نور" : "Sound & Light", icon: <Speaker size={18} /> }, { title: locale === "fa" ? "توضیحات" : "Notes", icon: <Edit3 size={18} /> } ];
-  const selectedDateEvents = selectedDate ? events.filter(e => e.shamsiDate === selectedDate || e.gregorianDate === selectedDate) : [];
-  const selectedDateReminders = selectedDate ? reminders.filter(r => r.shamsiDate === selectedDate || r.gregorianDate === selectedDate) : [];
+  const selectedDateEvents = selectedDate ? evList.filter(e => e.shamsiDate === selectedDate || e.gregorianDate === selectedDate) : [];
+  const selectedDateReminders = selectedDate ? remList.filter(r => r.shamsiDate === selectedDate || r.gregorianDate === selectedDate) : [];
   const calData = calendarType === "shamsi" ? getShamsiCalendarDays() : getGregorianCalendarDays();
   const monthName = calendarType === "shamsi" ? `${t.shamsiMonths[shamsiMonth.month - 1]} ${shamsiMonth.year}` : `${t.gregorianMonths[gregMonth.month - 1]} ${gregMonth.year}`;
   const weekDayLabels = [t.sat, t.sun, t.mon, t.tue, t.wed, t.thu, t.fri];
@@ -270,8 +327,8 @@ export default function DJApp() {
             <section className="mt-4">
               <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl overflow-hidden">
                 <div className="px-4 py-3 border-b border-white/5 flex items-center gap-2"><Clock size={14} className="text-purple-400" /><h2 className="text-sm font-bold text-purple-300">{t.upcomingEvents}</h2></div>
-                {stats.upcomingEvents.length === 0 ? (<div className="p-6 text-center"><Music size={28} className="mx-auto mb-2 text-gray-600" /><p className="text-xs text-gray-500">{t.noEvents}</p></div>) : (
-                  <div className="divide-y divide-white/5">{stats.upcomingEvents.slice(0, 2).map(ev => {
+                {(!stats?.upcomingEvents || stats.upcomingEvents.length === 0) ? (<div className="p-6 text-center"><Music size={28} className="mx-auto mb-2 text-gray-600" /><p className="text-xs text-gray-500">{t.noEvents}</p></div>) : (
+                  <div className="divide-y divide-white/5">{(stats.upcomingEvents || []).slice(0, 2).map(ev => {
                     const ep = ev.gregorianDate.split("-"); const ed = new Date(parseInt(ep[0]), parseInt(ep[1]) - 1, parseInt(ep[2]));
                     const dayOfWeekShamsi = locale === "fa" ? ["شنبه", "یکشنبه", "دوشنبه", "سه‌شنبه", "چهارشنبه", "پنجشنبه", "جمعه"] : ["Saturday", "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
                     const eDayName = dayOfWeekShamsi[(ed.getDay() + 1) % 7];
