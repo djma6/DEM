@@ -1,171 +1,352 @@
-# 📱 راهنمای نصب و انتشار برنامه چیه (iGig)
+# 📦 راهنمای کامل: آپلود روی GitHub + استقرار روی Vercel
 
-## ⭐ روش پیشنهادی: Vercel + PWA (رایگان، ۵ دقیقه)
+## 📋 چیزایی که نیاز دارید
 
-### قدم ۱: برنامه رو روی Vercel بذارید
+| چیز | از کجا | هزینه |
+|-----|--------|--------|
+| حساب GitHub | github.com | رایگان |
+| حساب Vercel | vercel.com | رایگان |
+| Git | git-scm.com | رایگان |
+| کامپیوتر | — | — |
 
-1. به سایت [vercel.com](https://vercel.com) برید و با **GitHub** وارد بشید
-2. دکمه **"Add New"** → **"Project"** رو بزنید
-3. اگر کد برنامه روی GitHub نیست:
-   - اول یک Repository روی GitHub بسازید
-   - تمام فایل‌های برنامه رو آپلود کنید
-4. Repository برنامه رو انتخاب کنید
-5. دکمه **"Deploy"** رو بزنید
-6. ✅ کمتر از ۲ دقیقه برنامه آماده‌ست!
+⏱️ **زمان تقریبی: ۱۵-۲۰ دقیقه**
 
-بعد از استقرار، Vercel یک آدرس مثل این بهتون میده:
+---
+
+## قدم ۱: نصب Git روی کامپیوتر
+
+### Windows:
+1. به سایت **[git-scm.com/download/win](https://git-scm.com/download/win)** برید
+2. فایل `.exe` رو دانلود کنید
+3. نصب کنید — همه گزینه‌ها رو پیش‌فرض بذارید
+4. **Restart** کنید
+
+### Mac:
+ترمینال رو باز کنید (Cmd+Space → Terminal):
+```bash
+brew install git
 ```
-https://igig-xxxx.vercel.app
+(اگه Brew ندارید: از **[git-scm.com/download/mac](https://git-scm.com/download/mac)** دانلود کنید)
+
+### Linux:
+```bash
+sudo apt install git -y
 ```
 
-### قدم ۲: دیتابیس رو تنظیم کنید
+### ✅ بررسی نصب:
+ترمینال/Command Prompt رو باز کنید:
+```bash
+git --version
+```
+باید خروجی مثل این بده:
+```
+git version 2.43.0
+```
 
-**روش ساده:** از [Supabase](https://supabase.com) استفاده کنید (رایگان):
-1. اکانت بسازید
-2. یک پروژه جدید بسازید
-3. آدرس PostgreSQL رو از Settings بگیرید
-4. در Vercel → Settings → Environment Variables اضافه کنید:
-   - Key: `DATABASE_URL`
-   - Value: آدرس Supabase PostgreSQL
+---
 
-**سپس:** در Vercel دکمه **"Redeploy"** رو بزنید
+## قدم ۲: تنظیم Git
 
-### قدم ۳: برنامه رو روی گوشی نصب کنید
+یک بار برای همیشه:
+```bash
+git config --global user.name "Your Name"
+git config --global user.email "your@email.com"
+```
+(ایمیل واقعی تون رو بذارید — بهتره همون ایمیل GitHub رو بذارید)
 
-#### 🤖 Android:
-1. **Chrome** رو باز کنید
-2. آدرس برنامه رو تایپ کنید
-3. منتظر بنر **"نصب برنامه"** بشید → کلیک کنید
-4. یا: منوی ⋮ → **"Install app"** رو بزنید
-5. ✅ آیکون روی صفحه اصلی ظاهر میشه!
+---
 
-#### 🍎 iPhone:
-1. **Safari** رو باز کنید
-2. آدرس برنامه رو تایپ کنید
-3<; دکمه اشتراک □↑ رو بزنید
+## قدم ۳: ساخت حساب GitHub
+
+1. به **[github.com/signup](https://github.com/signup)** برید
+2. **Email** رو وارد کنید → **Continue**
+3. **Password** بسازید → **Continue**
+4. **Username** انتخاب کنید (مثلاً `my-d5;yourname`) → **Continue**
+5. ترجیحات رو انتخاب کنید → **Continue**
+6. کد تایید ایمیل رو وارد کنید
+7. ✅ حساب ساخته شد!
+
+---
+
+## قدم ۴: ساخت Repository
+
+1. وارد GitHub بشید
+2. دکمه **"+"** (سمت راست بالا، کنار آواتار) رو بزنید
+3. **"New repository"** رو انتخاب کنید
+
+4. فرم رو پر کنید:
+
+```
+Repository name:     igig
+Description:         DJ Event Manager - برنامه چیه
+Visibility:          ✅ Public  (برای Vercel رایگان باید Public باشه)
+```
+
+5. ⚠️ **هیچ‌کدوم** از اینا رو تیک نزنید:
+   - ❌ Add a README file
+   - ❌ Add .gitignore
+   - ❌ Choose a license
+
+   (چون ما خودمون فایل‌ها رو داریم)
+
+6. دکمه **"Create repository"** رو بزنید
+7. ✅ Repository ساخته شد! یک صفحه سبز با دستورالعمل‌های Git می‌بینید
+
+**آدرس Repository رو یادداشت کنید:**
+```
+https://github.com/YOUR-USERNAME/igig
+```
+
+---
+
+## قدم ۵: دانلود کد برنامه روی کامپیوتر
+
+### روش A: دانلود مستقیم (ساده‌ترین)
+
+اگه کد برنامه رو به عنوان فایل زیپ (ZIP) دارید:
+
+1. یک پوشه روی کامپیوتر بسازید: مثلاً `C:\Projects\igig` یا `/home/user/projects/igig`
+2. فایل‌های برنامه رو اونجا Extract کنید
+3. Command Prompt یا Terminal رو اونجا باز کنید
+
+### روش B: Clone از Repository فعلی
+
+اگه کد برنامه روی یک سرور یا سندباکس هست:
+
+```bash
+mkdir -p ~/projects/igig
+cd ~/projects/igig
+# فایل‌ها رو کپی کنید یا scp بزنید
+```
+
+---
+
+## قدم ۶: راه‌اندازی Git در پوشه برنامه
+
+ترمینال رو در پوشه برنامه باز کنید و بزنید:
+
+```bash
+cd /path/to/igig
+git init
+git branch -m main
+```
+
+این‌ها یک مخزن Git محلی می‌سازن.
+
+---
+
+## قدم ۷: اضافه کردن فایل‌ها
+
+```bash
+git add -A
+```
+
+این همه فایل‌های برنامه رو به Git اضافه می‌کنه (به جز فایل‌هایی که در `.gitignore` هستن)
+
+بررسی کنید:
+```bash
+git status
+```
+باید لیست فایل‌های سبز (added) رو ببینید
+
+---
+
+## قدم ۸: اولین Commit
+
+```bash
+git commit -m "🎉 Initial commit: iGig DJ Event Manager"
+```
+
+این یک "نقطه ذخیره" از کل برنامه می‌سازه.
+
+---
+
+## قدم ۹: اتصال به GitHub
+
+آدرس Repository رو از قدم ۴ یادتونه؟ بذارید:
+```bash
+git remote add origin https://github.com/YOUR-USERNAME/igig.git
+```
+
+مثلاً اگه username شما `alireza` هست:
+```bash
+git remote add origin https://github.com/alireza/igig.git
+```
+
+---
+
+## قدم ۱۰: Push (آپلود) به GitHub
+
+```bash
+git push -u origin main
+```
+
+⚠️ **اولین بار** GitHub ازتون username و password می‌خواد:
+
+- **Username:** username GitHub تون
+- **Password:** ❌ پسورد معمولی کار نمی‌کنه!
+
+### ساخت Personal Access Token (به جای پسورد):
+
+1. در GitHub → **Settings** (بالا سمت راست، روی آواتار)
+2. سمت چپ، آخرین منو: **"Developer settings"**
+3. **"Personal access tokens"** → **"Tokens (classic)"**
+4. **"Generate new token (classic)"**
+5. Note: `igig-deploy`
+6. Expiration: **No expiration** (یا 90 days)
+7. تیک‌ها:
+   - ✅ **repo** (کامل — همه زیرگزینه‌ها)
+8. **"Generate token"** رو بزنید
+9. ⚠️ **TOKEN رو کپی کنید** — دیگه دیده نمیشه!
+
+حالا دوباره `git push` رو بزنید:
+- Username: `YOUR-USERNAME`
+- Password: `TOKEN` (همون توکنی که کپی کردید)
+
+✅ وقتی پیام شبیه این ببینید یعنی موفق بود:
+```
+To https://github.com/YOUR-USERNAME/igig.git
+ * [new branch]      main -> main
+```
+
+بررسی: به صفحه GitHub برید — فایل‌ها ظاهر شدن! 🎉
+
+---
+
+## قدم ۱۱: ساخت حساب Vercel
+
+1. به **[vercel.com/signup](https://vercel.com/signup)** برید
+2. **"Continue with GitHub"** رو بزنید
+3. authorize Vercel رو تایید کنید
+4. ✅ حساب ساخته شد!
+
+---
+
+## قدم ۱۲: استقرار برنامه
+
+### روش A: از وب‌سایت Vercel (ساده‌ترین)
+
+1. به **[vercel.com/new](https://vercel.com/new)** برید
+2. **"Import Git Repository"** رو انتخاب کنید
+3. Repository **`igig`** رو پیدا و انتخاب کنید
+4. تنظیمات:
+   - Framework Preset: **Next.js** (خودکار شناسایی میشه)
+   - Root Directory: `./`
+   - Build Command: `npm run build`
+   - Output Directory: `.next`
+5. ⚠️ **Environment Variables** رو اضافه کنید:
+   - Name: `DATABASE_URL`
+   - Value: آدرس PostgreSQL (از قدم ۱۳)
+6. دکمه **"Deploy"** رو بزنید
+7. ⏳ صبر کنید... ۱-۲ دقیقه
+8. ✅ 🎉 برنامه استقرار داده شد!
+
+### روش B: از CLI
+
+```bash
+npm install -g vercel
+vercel login
+cd /path/to/igig
+vercel
+```
+
+به سوالات Enter بزنید (پیش‌فرض خوبه)
+
+---
+
+## قدم ۱۳: تنظیم دیتابیس PostgreSQL
+
+### روش ساده: Supabase (رایگان)
+
+1. به **[supabase.com](https://supabase.com)** برید
+2. **"Start your project"** → با GitHub وارد بشید
+3. **"New project"**:
+   - Name: `igig`
+   - Database Password: یک پسورد قوی بسازید و یادداشت کنید
+   - Region: نزدیک‌ترین به کاربرانتون
+4. صبر کنید تا پروژه ساخته بشه
+5. به **Settings → Database** برید
+6. آدرس اتصال (Connection string) رو کپی کنید
+   - شبیه: `postgresql://postgres.XXX:[password]@aws-0-[region].pooler.supabase.com:6543/postgres`
+7. پسورد واقعی رو جای `[password]` بذارید
+
+### اضافه کردن به Vercel:
+
+1. در **[vercel.com](https://vercel.com)** → پروژه `igig`
+2. **Settings → Environment Variables**
+3. اضافه کنید:
+   - Name: `DATABASE_URL`
+   - Value: آدرس Supabase (از بالا)
+4. **Deployments →latest → ⋯ → Redeploy** رو بزنید
+
+---
+
+## قدم ۱۴: نصب برنامه روی گوشی 📱
+
+### Android:
+1. برنامه **Chrome** رو باز کنید
+2. آدرس Vercel رو تایپ کنید:
+   ```
+   https://igig-xxx.vercel.app
+   ```
+   (آدرس واقعی تون رو از Vercel بگیرید)
+3. صبر کنید تا کامل لود بشه
+4. **بنر "نصب برنامه"** ظاهر میشه → کلیک کنید
+   
+   **یا:** منوی **⋮** → **"Install app"**
+5. تایید کنید
+6. ✅ آیکون روی صفحه اصلی! برنامه مثل یک اپ واقعی باز میشه
+
+### iPhone:
+1. **Safari** رو باز کنید (فقط Safari!)
+2. آدرس رو تایپ کنید
+3. دکمه **اشتراک** (مربع با فلش بالا ↑) رو بزنید
 4. **"Add to Home Screen"** رو انتخاب کنید
-5. ✅ نصب شد!
+5. تایید کنید
+6. ✅ نصب شد!
 
 ---
 
-## 🖥️ روش دوم: سرور شخصی (VPS)
+## قدم ۱۵: عوض کد → خودکار استقرار 🔄
 
-### قدم ۱: سرور لینوکس بگیرید
-- از سایت‌هایی مثل Hetzner, DigitalOcean, یا Liara
-- حداقل ۱ RAM و ۱ vCPU
+از این به بعد، هر بار کد عوض بشه:
 
-### قدم ۲: وصل بشید به سرور
 ```bash
-ssh root@YOUR_SERVER_IP
+# عوض کد...
+git add -A
+git commit -m "تغییرات جدید"
+git push
 ```
 
-### قدم ۳: نصب پیش‌نیازها
-```bash
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-sudo apt-get install -y nodejs postgresql postgresql-contrib nginx
-sudo npm install -g pm2
-```
-
-### قدم ۴: تنظیم دیتابیس
-```bash
-sudo -u postgres psql
-CREATE DATABASE igig_db;
-CREATE USER igig WITH PASSWORD 'changeme';
-GRANT ALL PRIVILEGES ON DATABASE igig_db TO igig;
-\q
-```
-
-### قدم ۵: آپلود کد برنامه
-```bash
-mkdir -p /var/www/igig
-cd /var/www/igig
-# فایل‌ها رو با scp یا git clone آپلود کنید
-git clone YOUR_REPO .
-npm install
-```
-
-### قدم ۶: تنظیم محیط
-```bash
-cat > .env << EOF
-DATABASE_URL=postgresql://igig:changeme@localhost:5432/igig_db
-EOF
-```
-
-### قدم ۷: بیلد و اجرا
-```bash
-npm run build
-pm2 start npm --name igig -- start
-pm2 save
-pm2 startup
-```
-
-### قدم ۸: تنظیم Nginx
-```bash
-cat > /etc/nginx/sites-available/igig << 'EOF'
-server {
-    listen 80;
-    server_name yourdomain.com;
-    location / {
-        proxy_pass http://127.0.0.1:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_cache_bypass $http_upgrade;
-    }
-}
-EOF
-ln -s /etc/nginx/sites-available/igig /etc/nginx/sites-enabled/
-nginx -t && systemctl restart nginx
-```
-
-### قدم ۹: SSL رایگان با Let's Encrypt
-```bash
-sudo apt install certbot python3-certbot-nginx -y
-sudo certbot --nginx -d yourdomain.com
-```
-
-### قدم ۱۰: نصب روی گوشی
-آدرس `https://yourdomain.com` رو روی گوشی باز کنید و مثل قبل نصب کنید
+**Vercel خودکار دوباره بیلد و استقرار می‌کنه!** ✅
 
 ---
 
-## 📦 روش سوم: ساخت APK (فقط برای برنامه‌نویس‌ها)
+## ⚠️ مشکلات رایج
 
-اگه حتماً فایل `.apk` میخواید:
+### "Permission denied" موقع push:
+- Personal Access Token درست بسازید (قدم ۱۰)
 
-### پیش‌نیازها:
-```bash
-# Java
-sudo apt install default-jdk
+### "Build Failed" در Vercel:
+- `DATABASE_URL` رو چک کنید در Environment Variables هست
+- لاگ رو از بخش Deployments ببینید
 
-# Android SDK
-wget https://dl.google.com/android/repository/commandlinetools-linux-9476646_latest.zip
-mkdir -p ~/android-sdk/cmdline-tools
-unzip commandlinetools-linux-*.zip -d ~/android-sdk/cmdline-tools
-~/android-sdk/cmdline-tools/bin/sdkmanager --sdk_root=~/android-sdk "platform-tools" "platforms;android-33" "build-tools;33.0.0"
+### برنامه روی گوشی باز نمیشه:
+- مطمئن بشید آدرس درست رو تایپ کردید
+- مرورگر رو ببندید و دوباره باز کنید
 
-# Bubblewrap
-npm install -g @nicolo-ribaudo/bubblewrap
-```
-
-### ساخت:
-```bash
-bubblewrap init --manifest https://your-app.vercel.app/manifest.json
-bubblewrap build
-```
-
-فایل `app-release-signed.apk` ساخته میشه ⚠️
-**نکته:** این فقط یک پوسته اندرویدRound;; دور برنامه وب هست
+### دیتابیس وصل نمیشه:
+- آدرس Supabase رو چک کنید
+- پسورد رو درست وارد کرده باشید
 
 ---
 
-## ✅ خلاصه
+## 🏆 خلاصه
 
-| روش | هزینه | سختی | کیفیت |
-|------|--------|-------|---------|
-| **Vercel + PWA** | رایگان | ⭐ آسان | ⭐⭐⭐ بهترین |
-| **سرور شخصی** | ماهانه ~$۵ | ⭐⭐ متوسط | ⭐⭐⭐ خوب |
-| **APK با Bubblewrap** | رایگان | ⭐⭐⭐ سخت | ⭐⭐ قابل قبول |
+```
+GitHub Repository  →  Vercel Auto-Deploy  →  PWA روی گوشی
+     ↑                                         ↓
+   کد برنامه                            مثل اپ واقعی!
+```
 
-**🏆 پیشنهاد:** روش اول (Vercel + PWA) رو امتحان کنید — رایگانه و بهترین نتیجه رو میده!
+**همه چیز رایگانه!** 🎉
