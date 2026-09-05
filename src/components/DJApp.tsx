@@ -12,7 +12,7 @@ import { translations, type Locale } from "@/lib/i18n";
 import { toJalaali, toGregorian, jalaaliMonthLength, formatJalaaliDate, formatGregorianDate, todayJalaali } from "@/lib/jalaali";
 import { getShamsiHoliday, getGregorianHoliday, type Holiday, type GregorianHoliday } from "@/lib/holidays";
 import QRCode from "qrcode";
-import InstallGuide from "./InstallGuide";
+
 import {
   isGoogleConfigured,
   requestAccessToken,
@@ -66,7 +66,6 @@ export default function DJApp() {
   const [showCardQR, setShowCardQR] = useState(false);
   const [cardQrUrl, setCardQrUrl] = useState("");
   const [shareQrUrl, setShareQrUrl] = useState("");
-  const [showInstallGuide, setShowInstallGuide] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [googleUser, setGoogleUser] = useState<GoogleUser | null>(null);
   const [googleToken, setGoogleToken] = useState<string | null>(null);
@@ -83,7 +82,6 @@ export default function DJApp() {
   const [showQRModal, setShowQRModal] = useState(false);
   const [holidayTooltip, setHolidayTooltip] = useState<{ name: string; isHoliday: boolean } | null>(null);
   const [reminderDate, setReminderDate] = useState<string>("");
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [formData, setFormData] = useState({ eventType: "wedding", title: "", shamsiDate: "", gregorianDate: "", venue: "", location: "", fee: 0, deposit: 0, equipmentNeeded: "", soundLightProvider: "", soundLightProviderPhone: "", soundLightRequirements: "", soundLightCost: 0, soundLightEnabled: false, description: "", customerName: "", customerPhone: "", guestCount: 0, status: "pending" });
   const [reminderForm, setReminderForm] = useState({ title: "", shamsiDate: "", gregorianDate: "", time: "", notifyBefore: "0", contactName: "", contactPhone: "", description: "" });
@@ -235,8 +233,7 @@ export default function DJApp() {
   const handleSave = async () => { try { if (editingEvent) await fetch(`/api/events/${editingEvent.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(formData) }); else await fetch("/api/events", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(formData) }); setShowEventModal(false); setEditingEvent(null); fetchEvents(); } catch (e) { console.error(e); } };
   const handleDelete = async () => { if (!selectedEvent) return; try { await fetch(`/api/events/${selectedEvent.id}`, { method: "DELETE" }); setShowDeleteConfirm(false); setShowDetailModal(false); setSelectedEvent(null); fetchEvents(); } catch (e) { console.error(e); } };
   const handleReset = async () => { try { await fetch("/api/reset", { method: "DELETE" }); localStorage.clear(); setShowResetConfirm(false); window.location.reload(); } catch (e) { console.error(e); } };
-  const handleBackup = async () => { try { const r = await fetch("/api/backup"); const b = await r.json(); const blob = new Blob([JSON.stringify(b, null, 2)], { type: "application/json" }); const u = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = u; a.download = `igig-backup-${new Date().toISOString().split("T")[0]}.json`; a.click(); URL.revokeObjectURL(u); } catch (e) { console.error(e); } };
-  const handleRestore = async (file: File) => { try { const text = await file.text(); await fetch("/api/backup", { method: "POST", headers: { "Content-Type": "application/json" }, body: text }); fetchEvents(); fetchReminders(); fetchBankCards(); alert(locale === "fa" ? "بازیابی با موفقیت انجام شد" : "Restore completed"); } catch (e) { console.error(e); alert(locale === "fa" ? "خطا در بازیابی" : "Restore failed"); } };
+
   const handleContactPicker = async (target: "customer" | "provider" | "reminder") => { try { if ("contacts" in navigator) { const c = await (navigator as any).contacts.select(["name", "tel"], { multiple: false }); if (c.length > 0) { const name = c[0].name?.[0] || ""; const tel = c[0].tel?.[0] || ""; if (target === "customer") setFormData(p => ({ ...p, customerName: name || p.customerName, customerPhone: tel || p.customerPhone })); else if (target === "provider") setFormData(p => ({ ...p, soundLightProvider: name || p.soundLightProvider, soundLightProviderPhone: tel || p.soundLightProviderPhone })); else if (target === "reminder") setReminderForm(p => ({ ...p, contactName: name || p.contactName, contactPhone: tel || p.contactPhone })); } } else alert(t.contactPickerNotSupported); } catch { alert(t.contactPickerFailed); } };
 
   // Reminder
@@ -316,7 +313,14 @@ export default function DJApp() {
       if (!token) { alert(t.signInCancelled); return; }
       const r = await fetch("/api/backup");
       const data = await r.json();
-      await uploadBackupToDrive(token, { ...data, profile });
+      // Only backup events + reminders + profile (not bank cards)
+      await uploadBackupToDrive(token, {
+        version: data.version || "2.0",
+        exportDate: data.exportDate,
+        profile,
+        events: Array.isArray(data.events) ? data.events : [],
+        reminders: Array.isArray(data.reminders) ? data.reminders : [],
+      });
       alert(t.driveBackupSuccess);
     } catch (e: unknown) {
       console.error("Drive backup error:", e);
@@ -634,16 +638,27 @@ export default function DJApp() {
                     <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M23.06 12.25c0-.85-.08-1.67-.22-2.45H12v4.64h6.2a5.3 5.3 0 0 1-2.3 3.48v2.89h3.72c2.18-2 3.44-4.96 3.44-8.56Z" /><path fill="#34A853" d="M12 24c3.1 0 5.7-1.03 7.6-2.79l-3.72-2.89c-1.03.69-2.35 1.1-3.88 1.1-2.99 0-5.52-2.02-6.43-4.73H1.73v2.98A11.99 11.99 0 0 0 12 24Z" /><path fill="#FBBC05" d="M5.57 14.69a7.2 7.2 0 0 1 0-4.6V7.11H1.73a12 12 0 0 0 0 10.56l3.84-2.98Z" /><path fill="#EA4335" d="M12 4.75c1.68 0 3.19.58 4.38 1.72l3.28-3.28C17.7 1.24 15.1 0 12 0 7.3 0 3.25 2.7 1.73 7.11l3.84 2.98C6.48 6.77 9.01 4.75 12 4.75Z" /></svg>
                     {googleBusy ? "..." : t.connectGoogle}
                   </button>
-                  <button
-                    onClick={() => setShowInstallGuide(true)}
-                    className="w-full mt-2 flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-white/5 border border-white/10 text-xs text-purple-300 hover:bg-white/10 hover:border-purple-400/40 transition-all"
-                  >
-                    <Globe size={13} />
-                    {locale === "fa" ? "🔐 راهنمای نصب و راه‌اندازی گوگل" : "🔐 Google Setup Guide"}
-                  </button>
                 </>
               )}
             </div>
+
+            {/* Backup (Google Drive only) */}
+            {googleUser ? (
+              <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-4">
+                <h3 className="text-base font-bold text-purple-300 mb-4 flex items-center gap-2">
+                  <Download size={18} />{t.backup}
+                </h3>
+                <p className="text-[11px] text-gray-400 mb-3">{locale === "fa" ? "بک‌آپ آنلاین در گوگل درایو — داده‌ها روی گوشی و فضای ابری ذخیره می‌شوند" : "Online backup to Google Drive — data stored on phone and cloud"}</p>
+                <div className="space-y-2">
+                  <GlassButton onClick={handleDriveBackup} variant="primary" className="w-full" disabled={googleBusy}>
+                    <Upload size={15} className="inline ml-2" />{t.backupToDrive}
+                  </GlassButton>
+                  <GlassButton onClick={handleDriveRestore} variant="success" className="w-full" disabled={googleBusy}>
+                    <Download size={15} className="inline ml-2" />{t.restoreFromDrive}
+                  </GlassButton>
+                </div>
+              </div>
+            ) : null}
 
             {/* Bank Cards */}
             <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-4"><h3 className="text-base font-bold text-purple-300 mb-4 flex items-center gap-2"><CardIcon size={18} />{t.bankCards}</h3>
@@ -653,7 +668,7 @@ export default function DJApp() {
               </div>))}</div>
               <GlassButton onClick={() => { setBankCardForm({ title: "", cardNumber: "" }); setShowBankCardModal(true); }} variant="primary" className="w-full"><Plus size={14} className="inline ml-1" />{t.addCard}</GlassButton>
             </div>
-            <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-4"><h3 className="text-base font-bold text-purple-300 mb-4 flex items-center gap-2"><Download size={18} />{t.backup}</h3><div className="space-y-3"><GlassButton onClick={handleBackup} variant="primary" className="w-full"><Download size={16} className="inline ml-2" />{t.downloadBackup}</GlassButton><GlassButton onClick={() => fileInputRef.current?.click()} variant="success" className="w-full"><Upload size={16} className="inline ml-2" />{t.restoreBackup}</GlassButton><input ref={fileInputRef} type="file" accept=".json" onChange={e => { const f = e.target.files?.[0]; if (f) handleRestore(f); }} className="hidden" /></div></div>
+
             <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-4"><h3 className="text-base font-bold text-red-300 mb-4 flex items-center gap-2"><AlertCircle size={18} />{t.dangerZone}</h3><GlassButton onClick={() => setShowResetConfirm(true)} variant="danger" className="w-full"><RefreshCw size={16} className="inline ml-2" />{t.resetApp}</GlassButton></div>
 
             {/* Logout */}
@@ -684,9 +699,6 @@ export default function DJApp() {
           </div>
         </div>
       </div>)}
-
-      {/* Install Guide Modal */}
-      {showInstallGuide && <InstallGuide locale={locale} mode="google" onClose={() => setShowInstallGuide(false)} />}
 
       {/* Bank Card Modal */}
       {showBankCardModal && (<div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
@@ -818,7 +830,7 @@ export default function DJApp() {
       </div>)}
 
       {/* FAB */}
-      {!showEventModal && !showDetailModal && !showDeleteConfirm && !showResetConfirm && !showLogoutConfirm && !selectedDate && !showQRModal && !showMonthPicker && !showReminderModal && !showBankCardModal && !showShareCard && !showCardQR && !showInstallGuide && activeTab !== "settings" && (
+      {!showEventModal && !showDetailModal && !showDeleteConfirm && !showResetConfirm && !showLogoutConfirm && !selectedDate && !showQRModal && !showMonthPicker && !showReminderModal && !showBankCardModal && !showShareCard && !showCardQR && activeTab !== "settings" && (
         <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-30"><GlassButton onClick={() => openNewEventForm()} variant="primary" size="lg" className="shadow-2xl shadow-purple-500/50"><Plus size={22} className="inline ml-2" />{t.newEvent}</GlassButton></div>
       )}
 
