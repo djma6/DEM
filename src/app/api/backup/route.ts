@@ -1,73 +1,98 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { events } from "@/db/schema";
+import { events, reminders, bankCards } from "@/db/schema";
 
 export async function GET() {
   try {
-    const allEvents = await db.select().from(events);
-    
-    const backup = {
-      version: "1.0",
+    const [allEvents, allReminders, allCards] = await Promise.all([
+      db.select().from(events),
+      db.select().from(reminders),
+      db.select().from(bankCards),
+    ]);
+
+    return NextResponse.json({
+      version: "2.0",
       exportDate: new Date().toISOString(),
       events: allEvents,
-    };
-
-    return NextResponse.json(backup);
+      reminders: allReminders,
+      bankCards: allCards,
+    });
   } catch (error) {
     console.error("Error creating backup:", error);
-    return NextResponse.json(
-      { error: "Failed to create backup" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to create backup" }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    
-    if (!body.events || !Array.isArray(body.events)) {
-      return NextResponse.json(
-        { error: "Invalid backup format" },
-        { status: 400 }
-      );
+
+    if (!body || !Array.isArray(body.events)) {
+      return NextResponse.json({ error: "Invalid backup format" }, { status: 400 });
     }
 
-    // Clear existing events
+    // Clear existing data
+    await db.delete(reminders);
+    await db.delete(bankCards);
     await db.delete(events);
 
-    // Import events
-    for (const event of body.events) {
+    // Restore events
+    for (const e of body.events) {
       await db.insert(events).values({
-        eventType: event.eventType,
-        title: event.title,
-        shamsiDate: event.shamsiDate,
-        gregorianDate: event.gregorianDate,
-        venue: event.venue,
-        location: event.location,
-        fee: event.fee,
-        deposit: event.deposit,
-        equipmentNeeded: event.equipmentNeeded,
-        soundLightProvider: event.soundLightProvider,
-        soundLightRequirements: event.soundLightRequirements,
-        soundLightCost: event.soundLightCost,
-        description: event.description,
-        customerName: event.customerName,
-        customerPhone: event.customerPhone,
-        guestCount: event.guestCount,
-        status: event.status,
+        eventType: e.eventType ?? "wedding",
+        title: e.title ?? null,
+        shamsiDate: e.shamsiDate,
+        gregorianDate: e.gregorianDate,
+        venue: e.venue ?? null,
+        location: e.location ?? null,
+        fee: e.fee ?? 0,
+        deposit: e.deposit ?? 0,
+        equipmentNeeded: e.equipmentNeeded ?? null,
+        soundLightProvider: e.soundLightProvider ?? null,
+        soundLightProviderPhone: e.soundLightProviderPhone ?? null,
+        soundLightRequirements: e.soundLightRequirements ?? null,
+        soundLightCost: e.soundLightCost ?? 0,
+        description: e.description ?? null,
+        customerName: e.customerName ?? null,
+        customerPhone: e.customerPhone ?? null,
+        guestCount: e.guestCount ?? 0,
+        status: e.status ?? "pending",
       });
     }
 
-    return NextResponse.json({ 
-      success: true, 
-      message: `Imported ${body.events.length} events` 
+    // Restore reminders
+    if (Array.isArray(body.reminders)) {
+      for (const r of body.reminders) {
+        await db.insert(reminders).values({
+          title: r.title,
+          shamsiDate: r.shamsiDate,
+          gregorianDate: r.gregorianDate,
+          time: r.time ?? null,
+          notifyBefore: r.notifyBefore ?? "0",
+          contactName: r.contactName ?? null,
+          contactPhone: r.contactPhone ?? null,
+          description: r.description ?? null,
+          completed: r.completed ?? 0,
+        });
+      }
+    }
+
+    // Restore bank cards
+    if (Array.isArray(body.bankCards)) {
+      for (const c of body.bankCards) {
+        await db.insert(bankCards).values({
+          title: c.title,
+          cardNumber: c.cardNumber,
+        });
+      }
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: `Imported ${body.events.length} events`,
     });
   } catch (error) {
     console.error("Error restoring backup:", error);
-    return NextResponse.json(
-      { error: "Failed to restore backup" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to restore backup" }, { status: 500 });
   }
 }

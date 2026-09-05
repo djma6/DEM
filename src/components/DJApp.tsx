@@ -13,6 +13,14 @@ import { toJalaali, toGregorian, jalaaliMonthLength, formatJalaaliDate, formatGr
 import { getShamsiHoliday, getGregorianHoliday, type Holiday, type GregorianHoliday } from "@/lib/holidays";
 import QRCode from "qrcode";
 import InstallGuide from "./InstallGuide";
+import {
+  isGoogleConfigured,
+  requestAccessToken,
+  fetchGoogleUser,
+  uploadBackupToDrive,
+  downloadBackupFromDrive,
+  type GoogleUser,
+} from "@/lib/google";
 
 // ── Types ──
 interface EventData { id: number; eventType: string; title: string | null; shamsiDate: string; gregorianDate: string; venue: string | null; location: string | null; fee: number; deposit: number; equipmentNeeded: string | null; soundLightProvider: string | null; soundLightProviderPhone: string | null; soundLightRequirements: string | null; soundLightCost: number; description: string | null; customerName: string | null; customerPhone: string | null; guestCount: number; status: string; createdAt: string | null; updatedAt: string | null; }
@@ -59,6 +67,9 @@ export default function DJApp() {
   const [cardQrUrl, setCardQrUrl] = useState("");
   const [shareQrUrl, setShareQrUrl] = useState("");
   const [showInstallGuide, setShowInstallGuide] = useState(false);
+  const [googleUser, setGoogleUser] = useState<GoogleUser | null>(null);
+  const [googleToken, setGoogleToken] = useState<string | null>(null);
+  const [googleBusy, setGoogleBusy] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<EventData | null>(null);
   const [editingEvent, setEditingEvent] = useState<EventData | null>(null);
   const [calendarType, setCalendarType] = useState<"shamsi" | "gregorian">("shamsi");
@@ -82,6 +93,10 @@ export default function DJApp() {
 
   // Init
   useEffect(() => {
+    try {
+      const savedGoogle = localStorage.getItem("djGoogleUser");
+      if (savedGoogle) setGoogleUser(JSON.parse(savedGoogle));
+    } catch { /* ignore */ }
     try {
       const saved = localStorage.getItem("djProfile");
       if (saved) {
@@ -234,6 +249,100 @@ export default function DJApp() {
   const handleSaveReminder = async () => { try { await fetch("/api/reminders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(reminderForm) }); setShowReminderModal(false); fetchReminders(); } catch (e) { console.error(e); } };
   const handleDeleteReminder = async (id: number) => { try { await fetch(`/api/reminders/${id}`, { method: "DELETE" }); fetchReminders(); } catch (e) { console.error(e); } };
 
+  // ── Google ──
+  const handleGoogleSignIn = async () => {
+    if (!isGoogleConfigured()) { alert(t.googleNotConfigured); return; }
+    setGoogleBusy(true);
+    try {
+      const token = await requestAccessToken();
+      const user = await fetchGoogleUser(token);
+      setGoogleToken(token);
+      setGoogleUser(user);
+      localStorage.setItem("djGoogleUser", JSON.stringify(user));
+      // Prefill profile from Google, keep anything user already typed
+      setProfile(p => ({
+        ...p,
+        name: p.name || user.name || "",
+        email: user.email || p.email || "",
+      }));
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "";
+      if (msg === "NOT_CONFIGURED") alert(t.googleNotConfigured);
+      else if (msg === "POPUP_CLOSED") alert(t.signInCancelled);
+      else alert(t.driveFailed);
+    } finally {
+      setGoogleBusy(false);
+    }
+  };
+
+  const handleGoogleDisconnect = () => {
+    setGoogleUser(null);
+    setGoogleToken(null);
+    localStorage.removeItem("djGoogleUser");
+  };
+
+  const ensureGoogleToken = async (): Promise<string | null> => {
+    if (googleToken) return googleToken;
+    try {
+      const token = await requestAccessToken();
+      setGoogleToken(token);
+      if (!googleUser) {
+        const user = await fetchGoogleUser(token);
+        setGoogleUser(user);
+        localStorage.setItem("djGoogleUser", JSON.stringify(user));
+      }
+      return token;
+    } catch {
+      return null;
+    }
+  };
+
+  const handleDriveBackup = async () => {
+    if (!isGoogleConfigured()) { alert(t.googleNotConfigured); return; }
+    setGoogleBusy(true);
+    try {
+      const token = await ensureGoogleToken();
+      if (!token) { alert(t.signInCancelled); return; }
+      const r = await fetch("/api/backup");
+      const data = await r.json();
+      await uploadBackupToDrive(token, { ...data, profile });
+      alert(t.driveBackupSuccess);
+    } catch (e) {
+      console.error(e);
+      alert(t.driveFailed);
+    } finally {
+      setGoogleBusy(false);
+    }
+  };
+
+  const handleDriveRestore = async () => {
+    if (!isGoogleConfigured()) { alert(t.googleNotConfigured); return; }
+    setGoogleBusy(true);
+    try {
+      const token = await ensureGoogleToken();
+      if (!token) { alert(t.signInCancelled); return; }
+      const data = await downloadBackupFromDrive(token);
+      if (!data) { alert(t.driveNoBackup); return; }
+      const payload = data as { profile?: UserProfile };
+      await fetch("/api/backup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (payload.profile?.name) {
+        setProfile(payload.profile);
+        localStorage.setItem("djProfile", JSON.stringify(payload.profile));
+      }
+      fetchEvents(); fetchReminders(); fetchBankCards();
+      alert(t.driveRestoreSuccess);
+    } catch (e) {
+      console.error(e);
+      alert(t.driveFailed);
+    } finally {
+      setGoogleBusy(false);
+    }
+  };
+
   // Bank card
   const handleSaveCard = async () => { try { await fetch("/api/bank-cards", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(bankCardForm) }); setShowBankCardModal(false); setBankCardForm({ title: "", cardNumber: "" }); fetchBankCards(); } catch (e) { console.error(e); } };
   const handleDeleteCard = async (id: number) => { try { await fetch(`/api/bank-cards/${id}`, { method: "DELETE" }); fetchBankCards(); } catch (e) { console.error(e); } };
@@ -254,22 +363,96 @@ export default function DJApp() {
 
   // ── Setup ──
   if (showSetup) {
+    const googleDone = !!googleUser;
     return (
       <div dir={isRtl ? "rtl" : "ltr"} className="min-h-screen bg-[#0a0a1a] flex items-center justify-center p-4">
         <div className="w-full max-w-sm">
+          {/* Language toggle */}
+          <div className="flex justify-end mb-3">
+            <button
+              onClick={() => setLocale(locale === "fa" ? "en" : "fa")}
+              className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 backdrop-blur-xl border border-white/10 text-xs text-purple-300 hover:bg-white/10 hover:border-purple-400/40 transition-all active:scale-95"
+            >
+              <Globe size={14} />
+              {locale === "fa" ? "English" : "فارسی"}
+            </button>
+          </div>
+
           <div className="text-center mb-6">
             <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-purple-600 to-red-600 flex items-center justify-center mx-auto mb-4 shadow-2xl shadow-purple-500/50"><Music size={40} className="text-white" /></div>
             <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-400 to-red-400 bg-clip-text text-transparent mb-1">{t.appName}</h1>
-            <p className="text-gray-400 text-sm">{t.enterDJName}</p>
+            <p className="text-gray-400 text-sm">{googleDone ? t.completeProfileDesc : t.enterDJName}</p>
           </div>
+
+          {/* Google account card (after sign-in) */}
+          {googleDone && (
+            <div className="mb-4 flex items-center gap-3 bg-emerald-500/10 border border-emerald-500/25 rounded-2xl px-4 py-3">
+              {googleUser?.picture ? (
+                <img src={googleUser.picture} alt="" className="w-9 h-9 rounded-full" />
+              ) : (
+                <div className="w-9 h-9 rounded-full bg-emerald-500/20 flex items-center justify-center"><User size={16} className="text-emerald-300" /></div>
+              )}
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-white truncate">{googleUser?.name}</p>
+                <p className="text-[11px] text-emerald-300 truncate" dir="ltr">{googleUser?.email}</p>
+              </div>
+              <CheckCircle size={18} className="text-emerald-400 flex-shrink-0" />
+            </div>
+          )}
+
+          {/* Google sign-in button (before sign-in) */}
+          {!googleDone && (
+            <>
+              <button
+                onClick={handleGoogleSignIn}
+                disabled={googleBusy}
+                className="w-full flex items-center justify-center gap-3 py-3.5 rounded-2xl bg-white text-[#1f1f1f] font-semibold text-sm shadow-lg hover:bg-gray-100 active:scale-[0.98] transition-all disabled:opacity-60"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+                  <path fill="#4285F4" d="M23.06 12.25c0-.85-.08-1.67-.22-2.45H12v4.64h6.2a5.3 5.3 0 0 1-2.3 3.48v2.89h3.72c2.18-2 3.44-4.96 3.44-8.56Z" />
+                  <path fill="#34A853" d="M12 24c3.1 0 5.7-1.03 7.6-2.79l-3.72-2.89c-1.03.69-2.35 1.1-3.88 1.1-2.99 0-5.52-2.02-6.43-4.73H1.73v2.98A11.99 11.99 0 0 0 12 24Z" />
+                  <path fill="#FBBC05" d="M5.57 14.69a7.2 7.2 0 0 1 0-4.6V7.11H1.73a12 12 0 0 0 0 10.56l3.84-2.98Z" />
+                  <path fill="#EA4335" d="M12 4.75c1.68 0 3.19.58 4.38 1.72l3.28-3.28C17.7 1.24 15.1 0 12 0 7.3 0 3.25 2.7 1.73 7.11l3.84 2.98C6.48 6.77 9.01 4.75 12 4.75Z" />
+                </svg>
+                {googleBusy ? "..." : t.signInWithGoogle}
+              </button>
+
+              <div className="flex items-center gap-3 my-4">
+                <div className="flex-1 h-px bg-white/10" />
+                <span className="text-[10px] text-gray-500">{t.orEnterManually}</span>
+                <div className="flex-1 h-px bg-white/10" />
+              </div>
+            </>
+          )}
+
+          {/* Profile fields */}
           <div className="space-y-3">
-            <div className="flex items-center gap-2 bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl px-4 py-3"><User size={16} className="text-purple-400 flex-shrink-0" /><input type="text" value={profile.name} onChange={e => setProfile(p => ({ ...p, name: e.target.value }))} className="flex-1 bg-transparent text-white placeholder-gray-500 focus:outline-none" placeholder={t.djName} /></div>
-            <div className="flex items-center gap-2 bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl px-4 py-3"><Phone size={16} className="text-blue-400 flex-shrink-0" /><input type="tel" value={profile.phone} onChange={e => setProfile(p => ({ ...p, phone: e.target.value }))} className="flex-1 bg-transparent text-white placeholder-gray-500 focus:outline-none" placeholder={t.phone} dir="ltr" /></div>
-            <div className="flex items-center gap-2 bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl px-4 py-3"><Mail size={16} className="text-emerald-400 flex-shrink-0" /><input type="email" value={profile.email} onChange={e => setProfile(p => ({ ...p, email: e.target.value }))} className="flex-1 bg-transparent text-white placeholder-gray-500 focus:outline-none" placeholder={t.email} dir="ltr" /></div>
-            <div className="flex items-center gap-2 bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl px-4 py-3"><Globe size={16} className="text-pink-400 flex-shrink-0" /><input type="text" value={profile.instagram} onChange={e => setProfile(p => ({ ...p, instagram: e.target.value }))} className="flex-1 bg-transparent text-white placeholder-gray-500 focus:outline-none" placeholder={t.instagram} dir="ltr" /></div>
-            <GlassButton onClick={handleSetupSubmit} variant="primary" size="lg" className="w-full font-bold" disabled={!profile.name.trim()}>
-              <CheckCircle size={20} className="inline ml-2" />{t.start}
+            <div className="flex items-center gap-2 bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl px-4 py-3">
+              <User size={16} className="text-purple-400 flex-shrink-0" />
+              <input type="text" value={profile.name} onChange={e => setProfile(p => ({ ...p, name: e.target.value }))} className="flex-1 bg-transparent text-white placeholder-gray-500 focus:outline-none" placeholder={`${t.djName} *`} />
+            </div>
+            <div className="flex items-center gap-2 bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl px-4 py-3">
+              <Phone size={16} className="text-blue-400 flex-shrink-0" />
+              <input type="tel" value={profile.phone} onChange={e => setProfile(p => ({ ...p, phone: e.target.value }))} className="flex-1 bg-transparent text-white placeholder-gray-500 focus:outline-none" placeholder={`${t.phone} *`} dir="ltr" />
+            </div>
+            <div className="flex items-center gap-2 bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl px-4 py-3">
+              <Mail size={16} className="text-emerald-400 flex-shrink-0" />
+              <input type="email" value={profile.email} onChange={e => setProfile(p => ({ ...p, email: e.target.value }))} className="flex-1 bg-transparent text-white placeholder-gray-500 focus:outline-none" placeholder={t.email} dir="ltr" />
+            </div>
+            <div className="flex items-center gap-2 bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl px-4 py-3">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-pink-400 flex-shrink-0"><rect x="2" y="2" width="20" height="20" rx="5" ry="5" /><circle cx="12" cy="12" r="5" /><line x1="17.5" y1="6.5" x2="17.51" y2="6.5" /></svg>
+              <input type="text" value={profile.instagram} onChange={e => setProfile(p => ({ ...p, instagram: e.target.value }))} className="flex-1 bg-transparent text-white placeholder-gray-500 focus:outline-none" placeholder={t.instagram} dir="ltr" />
+            </div>
+
+            <GlassButton onClick={handleSetupSubmit} variant="primary" size="lg" className="w-full font-bold" disabled={!profile.name.trim() || !profile.phone.trim()}>
+              <CheckCircle size={20} className="inline ml-2" />{googleDone ? t.completeProfile : t.start}
             </GlassButton>
+
+            {(!profile.name.trim() || !profile.phone.trim()) && (
+              <p className="text-center text-[10px] text-gray-500">
+                * {t.required}
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -382,6 +565,46 @@ export default function DJApp() {
                 <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-3 py-2"><Globe size={14} className="text-pink-400" /><input type="text" value={profile.instagram} onChange={e => { setProfile(p => ({ ...p, instagram: e.target.value })); localStorage.setItem("djProfile", JSON.stringify({ ...profile, instagram: e.target.value })); }} className="flex-1 bg-transparent text-white text-sm focus:outline-none" dir="ltr" /></div>
               </div>
             </div>
+            {/* Google Account + Drive */}
+            <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-4">
+              <h3 className="text-base font-bold text-purple-300 mb-4 flex items-center gap-2">
+                <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M23.06 12.25c0-.85-.08-1.67-.22-2.45H12v4.64h6.2a5.3 5.3 0 0 1-2.3 3.48v2.89h3.72c2.18-2 3.44-4.96 3.44-8.56Z" /><path fill="#34A853" d="M12 24c3.1 0 5.7-1.03 7.6-2.79l-3.72-2.89c-1.03.69-2.35 1.1-3.88 1.1-2.99 0-5.52-2.02-6.43-4.73H1.73v2.98A11.99 11.99 0 0 0 12 24Z" /><path fill="#FBBC05" d="M5.57 14.69a7.2 7.2 0 0 1 0-4.6V7.11H1.73a12 12 0 0 0 0 10.56l3.84-2.98Z" /><path fill="#EA4335" d="M12 4.75c1.68 0 3.19.58 4.38 1.72l3.28-3.28C17.7 1.24 15.1 0 12 0 7.3 0 3.25 2.7 1.73 7.11l3.84 2.98C6.48 6.77 9.01 4.75 12 4.75Z" /></svg>
+                {t.googleAccount}
+              </h3>
+              {googleUser ? (
+                <>
+                  <div className="flex items-center gap-3 bg-emerald-500/10 border border-emerald-500/25 rounded-xl px-3 py-2.5 mb-3">
+                    {googleUser.picture ? <img src={googleUser.picture} alt="" className="w-8 h-8 rounded-full" /> : <div className="w-8 h-8 rounded-full bg-emerald-500/20 flex items-center justify-center"><User size={14} className="text-emerald-300" /></div>}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-white truncate">{googleUser.name}</p>
+                      <p className="text-[10px] text-emerald-300 truncate" dir="ltr">{googleUser.email}</p>
+                    </div>
+                    <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 flex-shrink-0">{t.connected}</span>
+                  </div>
+                  <div className="space-y-2">
+                    <GlassButton onClick={handleDriveBackup} variant="primary" className="w-full" disabled={googleBusy}>
+                      <Upload size={15} className="inline ml-2" />{t.backupToDrive}
+                    </GlassButton>
+                    <GlassButton onClick={handleDriveRestore} variant="success" className="w-full" disabled={googleBusy}>
+                      <Download size={15} className="inline ml-2" />{t.restoreFromDrive}
+                    </GlassButton>
+                    <GlassButton onClick={handleGoogleDisconnect} className="w-full">
+                      <X size={15} className="inline ml-2" />{t.disconnectGoogle}
+                    </GlassButton>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-[11px] text-gray-400 mb-3">{t.notConnected}</p>
+                  <button onClick={handleGoogleSignIn} disabled={googleBusy}
+                    className="w-full flex items-center justify-center gap-3 py-3 rounded-2xl bg-white text-[#1f1f1f] font-semibold text-sm hover:bg-gray-100 active:scale-[0.98] transition-all disabled:opacity-60">
+                    <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M23.06 12.25c0-.85-.08-1.67-.22-2.45H12v4.64h6.2a5.3 5.3 0 0 1-2.3 3.48v2.89h3.72c2.18-2 3.44-4.96 3.44-8.56Z" /><path fill="#34A853" d="M12 24c3.1 0 5.7-1.03 7.6-2.79l-3.72-2.89c-1.03.69-2.35 1.1-3.88 1.1-2.99 0-5.52-2.02-6.43-4.73H1.73v2.98A11.99 11.99 0 0 0 12 24Z" /><path fill="#FBBC05" d="M5.57 14.69a7.2 7.2 0 0 1 0-4.6V7.11H1.73a12 12 0 0 0 0 10.56l3.84-2.98Z" /><path fill="#EA4335" d="M12 4.75c1.68 0 3.19.58 4.38 1.72l3.28-3.28C17.7 1.24 15.1 0 12 0 7.3 0 3.25 2.7 1.73 7.11l3.84 2.98C6.48 6.77 9.01 4.75 12 4.75Z" /></svg>
+                    {googleBusy ? "..." : t.connectGoogle}
+                  </button>
+                </>
+              )}
+            </div>
+
             {/* Install Guide */}
             <GlassButton onClick={() => setShowInstallGuide(true)} variant="primary" className="w-full">
               <Smartphone size={16} className="inline ml-2" />{locale === "fa" ? "راهنمای نصب و انتشار" : "Install & Deploy Guide"}
