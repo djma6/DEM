@@ -137,6 +137,9 @@ export const translations = {
     required: "الزامی",
     optional: "اختیاری",
     changeLanguage: "تغییر زبان",
+    logout: "خروج از حساب",
+    logoutConfirm: "آیا از خروج اطمینان دارید؟",
+    logoutDesc: "شما از حساب خود خارج می‌شوید. اطلاعات ایونت‌ها حفظ می‌شود.",
   },
   en: {
     appName: "iGig",
@@ -213,6 +216,9 @@ export const translations = {
     required: "Required",
     optional: "Optional",
     changeLanguage: "Change language",
+    logout: "Log out",
+    logoutConfirm: "Are you sure you want to log out?",
+    logoutDesc: "You will be signed out. Your event data is kept.",
   },
 } as const;
 

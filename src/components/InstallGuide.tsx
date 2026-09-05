@@ -229,12 +229,12 @@ const steps = [
   },
 ];
 
-export type GuideMode = "deploy" | "google";
+export type GuideMode = "google";
 
 export default function InstallGuide({
   locale,
   onClose,
-  mode = "deploy",
+  mode = "google",
 }: {
   locale: "fa" | "en";
   onClose: () => void;

@@ -6,13 +6,13 @@ import {
   Users, Phone, FileText, Trash2, Edit3, AlertCircle, Clock, CreditCard,
   Globe, Speaker, Lightbulb, PartyPopper, LayoutDashboard, List, Settings,
   Download, Upload, RefreshCw, User, CheckCircle, Copy, QrCode, Contact,
-  Bell, Share2, Mail, CreditCard as CardIcon, Smartphone,
+  Bell, Share2, Mail, CreditCard as CardIcon, LogOut,
 } from "lucide-react";
 import { translations, type Locale } from "@/lib/i18n";
 import { toJalaali, toGregorian, jalaaliMonthLength, formatJalaaliDate, formatGregorianDate, todayJalaali } from "@/lib/jalaali";
 import { getShamsiHoliday, getGregorianHoliday, type Holiday, type GregorianHoliday } from "@/lib/holidays";
 import QRCode from "qrcode";
-import InstallGuide, { type GuideMode } from "./InstallGuide";
+import InstallGuide from "./InstallGuide";
 import {
   isGoogleConfigured,
   requestAccessToken,
@@ -67,7 +67,7 @@ export default function DJApp() {
   const [cardQrUrl, setCardQrUrl] = useState("");
   const [shareQrUrl, setShareQrUrl] = useState("");
   const [showInstallGuide, setShowInstallGuide] = useState(false);
-  const [guideMode, setGuideMode] = useState<GuideMode>("deploy");
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [googleUser, setGoogleUser] = useState<GoogleUser | null>(null);
   const [googleToken, setGoogleToken] = useState<string | null>(null);
   const [googleBusy, setGoogleBusy] = useState(false);
@@ -280,6 +280,16 @@ export default function DJApp() {
     setGoogleUser(null);
     setGoogleToken(null);
     localStorage.removeItem("djGoogleUser");
+  };
+
+  const handleLogout = () => {
+    setShowLogoutConfirm(false);
+    setGoogleUser(null);
+    setGoogleToken(null);
+    localStorage.removeItem("djGoogleUser");
+    localStorage.removeItem("djProfile");
+    setProfile({ name: "", phone: "", email: "", instagram: "" });
+    setShowSetup(true);
   };
 
   const ensureGoogleToken = async (): Promise<string | null> => {
@@ -625,7 +635,7 @@ export default function DJApp() {
                     {googleBusy ? "..." : t.connectGoogle}
                   </button>
                   <button
-                    onClick={() => { setGuideMode("google"); setShowInstallGuide(true); }}
+                    onClick={() => setShowInstallGuide(true)}
                     className="w-full mt-2 flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-white/5 border border-white/10 text-xs text-purple-300 hover:bg-white/10 hover:border-purple-400/40 transition-all"
                   >
                     <Globe size={13} />
@@ -634,11 +644,6 @@ export default function DJApp() {
                 </>
               )}
             </div>
-
-            {/* Install Guide */}
-            <GlassButton onClick={() => { setGuideMode("deploy"); setShowInstallGuide(true); }} variant="primary" className="w-full">
-              <Smartphone size={16} className="inline ml-2" />{locale === "fa" ? "راهنمای نصب و انتشار" : "Install & Deploy Guide"}
-            </GlassButton>
 
             {/* Bank Cards */}
             <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-4"><h3 className="text-base font-bold text-purple-300 mb-4 flex items-center gap-2"><CardIcon size={18} />{t.bankCards}</h3>
@@ -650,6 +655,11 @@ export default function DJApp() {
             </div>
             <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-4"><h3 className="text-base font-bold text-purple-300 mb-4 flex items-center gap-2"><Download size={18} />{t.backup}</h3><div className="space-y-3"><GlassButton onClick={handleBackup} variant="primary" className="w-full"><Download size={16} className="inline ml-2" />{t.downloadBackup}</GlassButton><GlassButton onClick={() => fileInputRef.current?.click()} variant="success" className="w-full"><Upload size={16} className="inline ml-2" />{t.restoreBackup}</GlassButton><input ref={fileInputRef} type="file" accept=".json" onChange={e => { const f = e.target.files?.[0]; if (f) handleRestore(f); }} className="hidden" /></div></div>
             <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-4"><h3 className="text-base font-bold text-red-300 mb-4 flex items-center gap-2"><AlertCircle size={18} />{t.dangerZone}</h3><GlassButton onClick={() => setShowResetConfirm(true)} variant="danger" className="w-full"><RefreshCw size={16} className="inline ml-2" />{t.resetApp}</GlassButton></div>
+
+            {/* Logout */}
+            <GlassButton onClick={() => setShowLogoutConfirm(true)} variant="danger" className="w-full !bg-red-600/25 !border-red-500/40">
+              <LogOut size={16} className="inline ml-2" />{t.logout}
+            </GlassButton>
           </section>
         )}
       </main>
@@ -676,7 +686,7 @@ export default function DJApp() {
       </div>)}
 
       {/* Install Guide Modal */}
-      {showInstallGuide && <InstallGuide locale={locale} mode={guideMode} onClose={() => setShowInstallGuide(false)} />}
+      {showInstallGuide && <InstallGuide locale={locale} mode="google" onClose={() => setShowInstallGuide(false)} />}
 
       {/* Bank Card Modal */}
       {showBankCardModal && (<div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
@@ -766,6 +776,9 @@ export default function DJApp() {
       {/* Reset Confirm */}
       {showResetConfirm && (<div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"><div className="w-full max-w-sm bg-[#1a1a2e]/90 backdrop-blur-xl rounded-2xl border border-red-500/30 p-6"><div className="text-center"><div className="w-14 h-14 rounded-full bg-red-600/20 flex items-center justify-center mx-auto mb-4"><RefreshCw size={24} className="text-red-400" /></div><h3 className="text-lg font-bold text-white mb-2">{t.areYouSure}</h3><p className="text-sm text-gray-400 mb-6">{t.allDataWillBeLost}</p><div className="flex gap-3"><GlassButton onClick={handleReset} variant="danger" className="flex-1">{t.yes}</GlassButton><GlassButton onClick={() => setShowResetConfirm(false)} className="flex-1">{t.no}</GlassButton></div></div></div></div>)}
 
+      {/* Logout Confirm */}
+      {showLogoutConfirm && (<div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"><div className="w-full max-w-sm bg-[#1a1a2e]/90 backdrop-blur-xl rounded-2xl border border-red-500/30 p-6"><div className="text-center"><div className="w-14 h-14 rounded-full bg-red-600/20 flex items-center justify-center mx-auto mb-4"><LogOut size={24} className="text-red-400" /></div><h3 className="text-lg font-bold text-white mb-2">{t.logoutConfirm}</h3><p className="text-sm text-gray-400 mb-6">{t.logoutDesc}</p><div className="flex gap-3"><GlassButton onClick={handleLogout} variant="danger" className="flex-1">{t.yes}</GlassButton><GlassButton onClick={() => setShowLogoutConfirm(false)} className="flex-1">{t.no}</GlassButton></div></div></div></div>)}
+
       {/* Event Form */}
       {showEventModal && (<div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end justify-center">
         <div className="w-full max-w-lg bg-[#1a1a2e]/90 backdrop-blur-xl rounded-t-3xl border-t border-purple-500/30 max-h-[90vh] flex flex-col">
@@ -805,7 +818,7 @@ export default function DJApp() {
       </div>)}
 
       {/* FAB */}
-      {!showEventModal && !showDetailModal && !showDeleteConfirm && !showResetConfirm && !selectedDate && !showQRModal && !showMonthPicker && !showReminderModal && !showBankCardModal && !showShareCard && !showCardQR && !showInstallGuide && activeTab !== "settings" && (
+      {!showEventModal && !showDetailModal && !showDeleteConfirm && !showResetConfirm && !showLogoutConfirm && !selectedDate && !showQRModal && !showMonthPicker && !showReminderModal && !showBankCardModal && !showShareCard && !showCardQR && !showInstallGuide && activeTab !== "settings" && (
         <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-30"><GlassButton onClick={() => openNewEventForm()} variant="primary" size="lg" className="shadow-2xl shadow-purple-500/50"><Plus size={22} className="inline ml-2" />{t.newEvent}</GlassButton></div>
       )}
 
