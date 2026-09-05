@@ -308,9 +308,20 @@ export default function DJApp() {
       const data = await r.json();
       await uploadBackupToDrive(token, { ...data, profile });
       alert(t.driveBackupSuccess);
-    } catch (e) {
-      console.error(e);
-      alert(t.driveFailed);
+    } catch (e: unknown) {
+      console.error("Drive backup error:", e);
+      const msg = e instanceof Error ? e.message : "";
+      if (msg === "DRIVE_API_NOT_ENABLED") {
+        alert(t.driveApiNotEnabled);
+      } else if (msg === "DRIVE_PERMISSION_DENIED") {
+        setGoogleToken(null);
+        alert(t.drivePermissionDenied);
+      } else if (msg === "TOKEN_EXPIRED") {
+        setGoogleToken(null);
+        alert(t.tokenExpired);
+      } else {
+        alert(t.driveFailed + (msg ? `\n(${msg})` : ""));
+      }
     } finally {
       setGoogleBusy(false);
     }
@@ -336,9 +347,20 @@ export default function DJApp() {
       }
       fetchEvents(); fetchReminders(); fetchBankCards();
       alert(t.driveRestoreSuccess);
-    } catch (e) {
-      console.error(e);
-      alert(t.driveFailed);
+    } catch (e: unknown) {
+      console.error("Drive restore error:", e);
+      const msg = e instanceof Error ? e.message : "";
+      if (msg === "DRIVE_API_NOT_ENABLED") {
+        alert(t.driveApiNotEnabled);
+      } else if (msg === "DRIVE_PERMISSION_DENIED") {
+        setGoogleToken(null);
+        alert(t.drivePermissionDenied);
+      } else if (msg === "TOKEN_EXPIRED") {
+        setGoogleToken(null);
+        alert(t.tokenExpired);
+      } else {
+        alert(t.driveFailed + (msg ? `\n(${msg})` : ""));
+      }
     } finally {
       setGoogleBusy(false);
     }

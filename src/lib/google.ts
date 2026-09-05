@@ -104,13 +104,47 @@ export async function fetchGoogleUser(accessToken: string): Promise<GoogleUser> 
   return (await res.json()) as GoogleUser;
 }
 
+async function handleGoogleApiError(res: Response, fallbackCode: string): Promise<never> {
+  try {
+    const errorData = await res.json();
+    const msg = errorData?.error?.message || "";
+    console.error("Google API Error:", res.status, errorData);
+    if (res.status === 403) {
+      if (
+        msg.includes("has not been used") ||
+        msg.includes("disabled") ||
+        msg.includes("Access Not Configured") ||
+        msg.includes("API has not been enabled")
+      ) {
+        throw new Error("DRIVE_API_NOT_ENABLED");
+      }
+      if (msg.includes("insufficient") || msg.includes("permission") || msg.includes("Scope") || msg.includes("denied")) {
+        throw new Error("DRIVE_PERMISSION_DENIED");
+      }
+    }
+    if (res.status === 401) {
+      throw new Error("TOKEN_EXPIRED");
+    }
+    if (msg) {
+      throw new Error(msg);
+    }
+  } catch (e: unknown) {
+    if (e instanceof Error && (e.message === "DRIVE_API_NOT_ENABLED" || e.message === "DRIVE_PERMISSION_DENIED" || e.message === "TOKEN_EXPIRED")) {
+      throw e;
+    }
+  }
+  throw new Error(fallbackCode);
+}
+
 /** Find existing backup file id inside the hidden appDataFolder. */
 async function findBackupFileId(accessToken: string): Promise<string | null> {
   const url =
-    "https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&fields=files(id,name)&q=" +
-    encodeURIComponent(`name='${BACKUP_FILENAME}'`);
+    "https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&fields=files(id,name,trashed)&q=" +
+    encodeURIComponent(`name='${BACKUP_FILENAME}' and trashed = false`);
   const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
-  if (!res.ok) return null;
+  if (!res.ok) {
+    await handleGoogleApiError(res, "DRIVE_FIND_FAILED");
+  }
   const data = (await res.json()) as { files?: { id: string; name: string }[] };
   return data.files && data.files.length > 0 ? data.files[0].id : null;
 }
@@ -119,13 +153,15 @@ async function findBackupFileId(accessToken: string): Promise<string | null> {
 export async function uploadBackupToDrive(accessToken: string, payload: unknown): Promise<void> {
   const existingId = await findBackupFileId(accessToken);
   const metadata: Record<string, unknown> = { name: BACKUP_FILENAME, mimeType: "application/json" };
-  if (!existingId) metadata.parents = ["appDataFolder"];
+  if (!existingId) {
+    metadata.parents = ["appDataFolder"];
+  }
 
   const boundary = "-------igig" + Date.now();
   const body =
     `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n` +
     JSON.stringify(metadata) +
-    `\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n` +
+    `\r\n--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n` +
     JSON.stringify(payload) +
     `\r\n--${boundary}--`;
 
@@ -141,7 +177,10 @@ export async function uploadBackupToDrive(accessToken: string, payload: unknown)
     },
     body,
   });
-  if (!res.ok) throw new Error("DRIVE_UPLOAD_FAILED");
+
+  if (!res.ok) {
+    await handleGoogleApiError(res, "DRIVE_UPLOAD_FAILED");
+  }
 }
 
 /** Download the backup JSON from Drive appDataFolder. Returns null if none. */
@@ -151,6 +190,8 @@ export async function downloadBackupFromDrive(accessToken: string): Promise<unkn
   const res = await fetch(`https://www.googleapis.com/drive/v3/files/${id}?alt=media`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
-  if (!res.ok) throw new Error("DRIVE_DOWNLOAD_FAILED");
+  if (!res.ok) {
+    await handleGoogleApiError(res, "DRIVE_DOWNLOAD_FAILED");
+  }
   return await res.json();
 }

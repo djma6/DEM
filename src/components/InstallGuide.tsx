@@ -64,6 +64,27 @@ const googleGuideSteps = [
     },
   },
   {
+    title: { fa: "فعال‌سازی Google Drive API", en: "Enable Google Drive API" },
+    desc: {
+      fa: "برای کارکرد پشتیبان‌گیری، باید سرویس گوگل درایو را در پروژه فعال (Enable) کنید:",
+      en: "To enable Google Drive backups, enable the Google Drive API in your project:",
+    },
+    link: {
+      url: "https://console.cloud.google.com/apis/library/drive.googleapis.com",
+      label: { fa: "فعال‌سازی Google Drive API", en: "Enable Google Drive API" },
+    },
+    code: {
+      fa: `📋 اقدام لازم:
+۱. روی لینک بالا کلیک کنید.
+۲. دکمه آبی ENABLE را بزنید.
+(اگر فعال باشد، دکمه Manage را می‌بینید)`,
+      en: `📋 Action needed:
+1. Click the link above.
+2. Click the blue ENABLE button.
+(If already enabled, you will see 'Manage')`,
+    },
+  },
+  {
     title: { fa: "ساخت OAuth Client ID", en: "Create OAuth Client ID" },
     desc: {
       fa: "از بخش Credentials یک OAuth Client ID وب بسازید:",
