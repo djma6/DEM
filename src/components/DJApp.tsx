@@ -12,7 +12,7 @@ import { translations, type Locale } from "@/lib/i18n";
 import { toJalaali, toGregorian, jalaaliMonthLength, formatJalaaliDate, formatGregorianDate, todayJalaali } from "@/lib/jalaali";
 import { getShamsiHoliday, getGregorianHoliday, type Holiday, type GregorianHoliday } from "@/lib/holidays";
 import QRCode from "qrcode";
-import InstallGuide from "./InstallGuide";
+import InstallGuide, { type GuideMode } from "./InstallGuide";
 import {
   isGoogleConfigured,
   requestAccessToken,
@@ -67,6 +67,7 @@ export default function DJApp() {
   const [cardQrUrl, setCardQrUrl] = useState("");
   const [shareQrUrl, setShareQrUrl] = useState("");
   const [showInstallGuide, setShowInstallGuide] = useState(false);
+  const [guideMode, setGuideMode] = useState<GuideMode>("deploy");
   const [googleUser, setGoogleUser] = useState<GoogleUser | null>(null);
   const [googleToken, setGoogleToken] = useState<string | null>(null);
   const [googleBusy, setGoogleBusy] = useState(false);
@@ -601,12 +602,19 @@ export default function DJApp() {
                     <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M23.06 12.25c0-.85-.08-1.67-.22-2.45H12v4.64h6.2a5.3 5.3 0 0 1-2.3 3.48v2.89h3.72c2.18-2 3.44-4.96 3.44-8.56Z" /><path fill="#34A853" d="M12 24c3.1 0 5.7-1.03 7.6-2.79l-3.72-2.89c-1.03.69-2.35 1.1-3.88 1.1-2.99 0-5.52-2.02-6.43-4.73H1.73v2.98A11.99 11.99 0 0 0 12 24Z" /><path fill="#FBBC05" d="M5.57 14.69a7.2 7.2 0 0 1 0-4.6V7.11H1.73a12 12 0 0 0 0 10.56l3.84-2.98Z" /><path fill="#EA4335" d="M12 4.75c1.68 0 3.19.58 4.38 1.72l3.28-3.28C17.7 1.24 15.1 0 12 0 7.3 0 3.25 2.7 1.73 7.11l3.84 2.98C6.48 6.77 9.01 4.75 12 4.75Z" /></svg>
                     {googleBusy ? "..." : t.connectGoogle}
                   </button>
+                  <button
+                    onClick={() => { setGuideMode("google"); setShowInstallGuide(true); }}
+                    className="w-full mt-2 flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-white/5 border border-white/10 text-xs text-purple-300 hover:bg-white/10 hover:border-purple-400/40 transition-all"
+                  >
+                    <Globe size={13} />
+                    {locale === "fa" ? "🔐 راهنمای نصب و راه‌اندازی گوگل" : "🔐 Google Setup Guide"}
+                  </button>
                 </>
               )}
             </div>
 
             {/* Install Guide */}
-            <GlassButton onClick={() => setShowInstallGuide(true)} variant="primary" className="w-full">
+            <GlassButton onClick={() => { setGuideMode("deploy"); setShowInstallGuide(true); }} variant="primary" className="w-full">
               <Smartphone size={16} className="inline ml-2" />{locale === "fa" ? "راهنمای نصب و انتشار" : "Install & Deploy Guide"}
             </GlassButton>
 
@@ -646,7 +654,7 @@ export default function DJApp() {
       </div>)}
 
       {/* Install Guide Modal */}
-      {showInstallGuide && <InstallGuide locale={locale} onClose={() => setShowInstallGuide(false)} />}
+      {showInstallGuide && <InstallGuide locale={locale} mode={guideMode} onClose={() => setShowInstallGuide(false)} />}
 
       {/* Bank Card Modal */}
       {showBankCardModal && (<div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
