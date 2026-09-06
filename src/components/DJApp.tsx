@@ -22,6 +22,7 @@ import {
   type GoogleUser,
 } from "@/lib/google";
 import InstallGate from "./InstallGate";
+import DatePicker from "./DatePicker";
 import { isStandalone, isMobileDevice } from "@/lib/pwa";
 import {
   notificationsSupported,
@@ -128,6 +129,8 @@ export default function DJApp() {
   const [syncState, setSyncState] = useState<SyncState>("idle");
   const [syncPending, setSyncPending] = useState(0);
   const [profileSavedAt, setProfileSavedAt] = useState<number | null>(null);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showReminderDatePicker, setShowReminderDatePicker] = useState(false);
   const [needsInstall, setNeedsInstall] = useState<boolean | null>(null);
   const [notifPerm, setNotifPerm] = useState<NotificationPermission | "unsupported">("default");
   const [googleUser, setGoogleUser] = useState<GoogleUser | null>(null);
@@ -367,7 +370,39 @@ export default function DJApp() {
   // Form
   const openNewEventForm = (date?: string) => { setEditingEvent(null); const sd = date || todayStr; const p = sd.split("/"); const g = toGregorian(parseInt(p[0]), parseInt(p[1]), parseInt(p[2])); setFormData({ eventType: "wedding", title: "", shamsiDate: sd, gregorianDate: formatGregorianDate(g.gy, g.gm, g.gd), venue: "", location: "", fee: 0, deposit: 0, equipmentNeeded: "", soundLightProvider: "", soundLightProviderPhone: "", soundLightRequirements: "", soundLightCost: 0, soundLightEnabled: false, description: "", customerName: "", customerPhone: "", guestCount: 0, status: "pending" }); setFormStep(0); setShowEventModal(true); };
   const openEditEventForm = (ev: EventData) => { setEditingEvent(ev); setFormData({ eventType: ev.eventType, title: ev.title || "", shamsiDate: ev.shamsiDate, gregorianDate: ev.gregorianDate, venue: ev.venue || "", location: ev.location || "", fee: ev.fee, deposit: ev.deposit, equipmentNeeded: ev.equipmentNeeded || "", soundLightProvider: ev.soundLightProvider || "", soundLightProviderPhone: "", soundLightRequirements: ev.soundLightRequirements || "", soundLightCost: ev.soundLightCost, soundLightEnabled: !!(ev.soundLightProvider || ev.soundLightRequirements || ev.soundLightCost), description: ev.description || "", customerName: ev.customerName || "", customerPhone: ev.customerPhone || "", guestCount: ev.guestCount || 0, status: ev.status }); setFormStep(0); setShowEventModal(true); };
-  const handleShamsiDateChange = (val: string) => { const p = val.split("/"); if (p.length === 3) { const jy = parseInt(p[0]), jm = parseInt(p[1]), jd = parseInt(p[2]); if (!isNaN(jy) && !isNaN(jm) && !isNaN(jd) && jm >= 1 && jm <= 12 && jd >= 1 && jd <= 31) { try { const g = toGregorian(jy, jm, jd); setFormData(prev => ({ ...prev, shamsiDate: val, gregorianDate: formatGregorianDate(g.gy, g.gm, g.gd) })); return; } catch {} } } setFormData(prev => ({ ...prev, shamsiDate: val })); };
+  // Shamsi → Gregorian (auto-sync)
+  const handleShamsiDateChange = (val: string) => {
+    const norm = val.replace(/[-.]/g, "/").replace(/[^\d/]/g, "");
+    const p = norm.split("/");
+    if (p.length === 3) {
+      const jy = parseInt(p[0]), jm = parseInt(p[1]), jd = parseInt(p[2]);
+      if (!isNaN(jy) && !isNaN(jm) && !isNaN(jd) && jy > 1000 && jm >= 1 && jm <= 12 && jd >= 1 && jd <= 31) {
+        try {
+          const g = toGregorian(jy, jm, jd);
+          setFormData(prev => ({ ...prev, shamsiDate: norm, gregorianDate: formatGregorianDate(g.gy, g.gm, g.gd) }));
+          return;
+        } catch { /* invalid jalaali date */ }
+      }
+    }
+    setFormData(prev => ({ ...prev, shamsiDate: norm }));
+  };
+
+  // Gregorian → Shamsi (auto-sync)
+  const handleGregorianDateChange = (val: string) => {
+    const norm = val.replace(/[/.]/g, "-").replace(/[^\d-]/g, "");
+    const p = norm.split("-");
+    if (p.length === 3) {
+      const gy = parseInt(p[0]), gm = parseInt(p[1]), gd = parseInt(p[2]);
+      if (!isNaN(gy) && !isNaN(gm) && !isNaN(gd) && gy > 1000 && gm >= 1 && gm <= 12 && gd >= 1 && gd <= 31) {
+        try {
+          const j = toJalaali(gy, gm, gd);
+          setFormData(prev => ({ ...prev, gregorianDate: norm, shamsiDate: formatJalaaliDate(j.jy, j.jm, j.jd) }));
+          return;
+        } catch { /* invalid gregorian date */ }
+      }
+    }
+    setFormData(prev => ({ ...prev, gregorianDate: norm }));
+  };
   const handleSave = async () => {
     // Validate required dates before saving
     if (!formData.shamsiDate?.trim() || !formData.gregorianDate?.trim()) {
@@ -957,6 +992,26 @@ export default function DJApp() {
         </div>
       </div>)}
 
+      {/* Date Picker (event form) */}
+      {showDatePicker && (
+        <DatePicker
+          locale={locale}
+          initialShamsi={formData.shamsiDate}
+          onSelect={(s, g) => setFormData(p => ({ ...p, shamsiDate: s, gregorianDate: g }))}
+          onClose={() => setShowDatePicker(false)}
+        />
+      )}
+
+      {/* Date Picker (reminder form) */}
+      {showReminderDatePicker && (
+        <DatePicker
+          locale={locale}
+          initialShamsi={reminderForm.shamsiDate}
+          onSelect={(s, g) => setReminderForm(p => ({ ...p, shamsiDate: s, gregorianDate: g }))}
+          onClose={() => setShowReminderDatePicker(false)}
+        />
+      )}
+
       {/* Bank Card Modal */}
       {showBankCardModal && (<div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
         <div className="w-full max-w-sm bg-[#1a1a2e]/90 backdrop-blur-xl rounded-3xl border border-purple-500/30 p-5">
@@ -985,7 +1040,14 @@ export default function DJApp() {
           <div className="flex items-center justify-between mb-4"><h3 className="text-lg font-bold text-purple-300"><Bell size={18} className="inline ml-2" />{t.addReminder}</h3><GlassButton onClick={() => setShowReminderModal(false)} size="sm"><X size={16} /></GlassButton></div>
           <div className="space-y-3">
             <div><label className={lc}>{t.reminderTitle}</label><input type="text" value={reminderForm.title} onChange={e => setReminderForm(p => ({ ...p, title: e.target.value }))} className={ic} placeholder={locale === "fa" ? "عنوان قرار" : "Appointment title"} /></div>
-            <div><label className={lc}>{t.shamsiDate}</label><input type="text" value={reminderForm.shamsiDate} readOnly className={`${ic} opacity-60`} dir="ltr" /></div>
+            <div>
+              <label className={lc}>{t.shamsiDate}</label>
+              <div className="flex gap-2">
+                <input type="text" value={reminderForm.shamsiDate} readOnly className={`${ic} opacity-70`} dir="ltr" />
+                <GlassButton onClick={() => setShowReminderDatePicker(true)} size="md"><Calendar size={18} /></GlassButton>
+              </div>
+              {reminderForm.gregorianDate && <p className="text-[10px] text-blue-300 mt-1" dir="ltr">{reminderForm.gregorianDate}</p>}
+            </div>
             <div><label className={lc}>{t.reminderTime}</label><input type="time" value={reminderForm.time} onChange={e => setReminderForm(p => ({ ...p, time: e.target.value }))} className={ic} /></div>
             <div><label className={lc}>{t.notifyBefore}</label><select value={reminderForm.notifyBefore} onChange={e => setReminderForm(p => ({ ...p, notifyBefore: e.target.value }))} className={sc}><option value="0">{locale === "fa" ? "بدون یادآوری" : "No notification"}</option><option value="15">{t.min15}</option><option value="30">{t.min30}</option><option value="60">{t.hour1}</option><option value="120">{t.hour2}</option><option value="1440">{t.day1}</option></select></div>
             <div><label className={lc}>{t.contactName}</label><div className="flex gap-2"><input type="text" value={reminderForm.contactName} onChange={e => setReminderForm(p => ({ ...p, contactName: e.target.value }))} className={ic} placeholder={locale === "fa" ? "نام فرد" : "Contact name"} /><GlassButton onClick={() => handleContactPicker("reminder")} size="md"><Contact size={18} /></GlassButton></div></div>
@@ -1055,7 +1117,14 @@ export default function DJApp() {
           <div className="px-4 pt-3 pb-2 flex gap-1.5">{formSteps.map((_, i) => <button key={i} onClick={() => setFormStep(i)} className={`flex-1 h-1.5 rounded-full transition-all ${i === formStep ? "bg-gradient-to-r from-purple-500 to-red-500" : i < formStep ? "bg-purple-600/50" : "bg-white/10"}`} />)}</div>
           <div className="px-4 py-2 flex items-center gap-2"><span className="text-purple-400">{formSteps[formStep].icon}</span><span className="text-sm font-medium text-gray-300">{formSteps[formStep].title}</span></div>
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            {formStep === 0 && (<><div><label className={lc}>{t.eventType}</label><select value={formData.eventType} onChange={e => setFormData(p => ({ ...p, eventType: e.target.value }))} className={sc}>{EVENT_TYPES.map(tp => <option key={tp} value={tp}>{t[tp as keyof typeof t]}</option>)}</select></div><div><label className={lc}>{t.title}</label><input type="text" value={formData.title} onChange={e => setFormData(p => ({ ...p, title: e.target.value }))} className={ic} placeholder={locale === "fa" ? "عنوان ایونت" : "Event title"} /></div><div><label className={lc}>{t.shamsiDate}</label><input type="text" value={formData.shamsiDate} onChange={e => handleShamsiDateChange(e.target.value)} className={ic} placeholder="1404/03/15" dir="ltr" /></div><div><label className={lc}>{t.gregorianDate}</label><input type="text" value={formData.gregorianDate} onChange={e => setFormData(p => ({ ...p, gregorianDate: e.target.value }))} className={ic} placeholder="2025-06-05" dir="ltr" /></div><div><label className={lc}>{t.venue}</label><input type="text" value={formData.venue} onChange={e => setFormData(p => ({ ...p, venue: e.target.value }))} className={ic} placeholder={locale === "fa" ? "محل برگزاری" : "Venue"} /></div><div><label className={lc}>{t.location}</label><input type="text" value={formData.location} onChange={e => setFormData(p => ({ ...p, location: e.target.value }))} className={ic} placeholder={locale === "fa" ? "آدرس" : "Address"} /></div><div><label className={lc}>{t.status}</label><select value={formData.status} onChange={e => setFormData(p => ({ ...p, status: e.target.value }))} className={sc}>{STATUSES.map(s => <option key={s} value={s}>{t[s as keyof typeof t]}</option>)}</select></div></>)}
+            {formStep === 0 && (<><div><label className={lc}>{t.eventType}</label><select value={formData.eventType} onChange={e => setFormData(p => ({ ...p, eventType: e.target.value }))} className={sc}>{EVENT_TYPES.map(tp => <option key={tp} value={tp}>{t[tp as keyof typeof t]}</option>)}</select></div><div><label className={lc}>{t.title}</label><input type="text" value={formData.title} onChange={e => setFormData(p => ({ ...p, title: e.target.value }))} className={ic} placeholder={locale === "fa" ? "عنوان ایونت" : "Event title"} /></div><div>
+  <label className={lc}>{t.date} <span className="text-[10px] text-purple-400">({locale === "fa" ? "با تغییر هرکدام، دیگری خودکار به‌روز می‌شود" : "changing one updates the other"})</span></label>
+  <button type="button" onClick={() => setShowDatePicker(true)} className="w-full mb-2 py-3 rounded-2xl bg-gradient-to-r from-purple-600/25 to-blue-600/25 border border-purple-400/40 text-sm font-bold text-purple-100 flex items-center justify-center gap-2 hover:from-purple-600/35 hover:to-blue-600/35 active:scale-[0.98] transition-all">
+    <Calendar size={16} />{t.selectDate}
+  </button>
+</div>
+<div><label className={lc}>{t.shamsiDate} <span className="text-[9px] text-purple-400">★</span></label><input type="text" value={formData.shamsiDate} onChange={e => handleShamsiDateChange(e.target.value)} className={ic} placeholder="1404/03/15" dir="ltr" inputMode="numeric" /></div>
+<div><label className={lc}>{t.gregorianDate}</label><input type="text" value={formData.gregorianDate} onChange={e => handleGregorianDateChange(e.target.value)} className={ic} placeholder="2025-06-05" dir="ltr" inputMode="numeric" /></div><div><label className={lc}>{t.venue}</label><input type="text" value={formData.venue} onChange={e => setFormData(p => ({ ...p, venue: e.target.value }))} className={ic} placeholder={locale === "fa" ? "محل برگزاری" : "Venue"} /></div><div><label className={lc}>{t.location}</label><input type="text" value={formData.location} onChange={e => setFormData(p => ({ ...p, location: e.target.value }))} className={ic} placeholder={locale === "fa" ? "آدرس" : "Address"} /></div><div><label className={lc}>{t.status}</label><select value={formData.status} onChange={e => setFormData(p => ({ ...p, status: e.target.value }))} className={sc}>{STATUSES.map(s => <option key={s} value={s}>{t[s as keyof typeof t]}</option>)}</select></div></>)}
             {formStep === 1 && (<><div><label className={lc}>{t.customerName}</label><input type="text" value={formData.customerName} onChange={e => setFormData(p => ({ ...p, customerName: e.target.value }))} className={ic} placeholder={locale === "fa" ? "نام مشتری" : "Customer name"} /></div><div><label className={lc}>{t.customerPhone}</label><div className="flex gap-2"><input type="tel" value={formData.customerPhone} onChange={e => setFormData(p => ({ ...p, customerPhone: e.target.value }))} className={ic} placeholder="09123456789" dir="ltr" /><GlassButton onClick={() => handleContactPicker("customer")} size="md"><Contact size={18} /></GlassButton></div></div><div><label className={lc}>{t.guestCount}</label><input type="number" value={formData.guestCount || ""} onChange={e => setFormData(p => ({ ...p, guestCount: parseInt(e.target.value) || 0 }))} className={ic} placeholder={locale === "fa" ? "تعداد مهمان" : "Guest count"} dir="ltr" /></div></>)}
             {formStep === 2 && (<><div><label className={lc}>{t.fee}</label><input type="number" value={formData.fee || ""} onChange={e => setFormData(p => ({ ...p, fee: parseInt(e.target.value) || 0 }))} className={ic} placeholder={locale === "fa" ? "مبلغ (تومان)" : "Fee (Toman)"} dir="ltr" /></div><div><label className={lc}>{t.deposit}</label><input type="number" value={formData.deposit || ""} onChange={e => setFormData(p => ({ ...p, deposit: parseInt(e.target.value) || 0 }))} className={ic} placeholder={locale === "fa" ? "بیعانه (تومان)" : "Deposit (Toman)"} dir="ltr" /></div><div className="bg-amber-500/10 backdrop-blur-xl border border-amber-500/20 rounded-xl p-4"><div className="flex items-center gap-2 text-sm"><AlertCircle size={14} className="text-amber-400" /><span className="text-amber-300">{t.remaining}:</span><span className="text-amber-200 font-bold">{(formData.fee - formData.deposit).toLocaleString()} {locale === "fa" ? "تومان" : "Toman"}</span></div></div></>)}
             {formStep === 3 && (<>
@@ -1087,7 +1156,7 @@ export default function DJApp() {
       </div>)}
 
       {/* FAB */}
-      {!showEventModal && !showDetailModal && !showDeleteConfirm && !showResetConfirm && !showLogoutConfirm && !selectedDate && !showQRModal && !showMonthPicker && !showReminderModal && !showBankCardModal && !showShareCard && !showCardQR && activeTab !== "settings" && (
+      {!showEventModal && !showDetailModal && !showDeleteConfirm && !showResetConfirm && !showLogoutConfirm && !selectedDate && !showQRModal && !showMonthPicker && !showReminderModal && !showBankCardModal && !showShareCard && !showCardQR && !showDatePicker && !showReminderDatePicker && activeTab !== "settings" && (
         <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-30"><GlassButton onClick={() => openNewEventForm()} variant="primary" size="lg" className="shadow-2xl shadow-purple-500/50"><Plus size={22} className="inline ml-2" />{t.newEvent}</GlassButton></div>
       )}
 
