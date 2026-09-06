@@ -127,6 +127,7 @@ export default function DJApp() {
   const [saveBusy, setSaveBusy] = useState(false);
   const [syncState, setSyncState] = useState<SyncState>("idle");
   const [syncPending, setSyncPending] = useState(0);
+  const [profileSavedAt, setProfileSavedAt] = useState<number | null>(null);
   const [needsInstall, setNeedsInstall] = useState<boolean | null>(null);
   const [notifPerm, setNotifPerm] = useState<NotificationPermission | "unsupported">("default");
   const [googleUser, setGoogleUser] = useState<GoogleUser | null>(null);
@@ -225,10 +226,11 @@ export default function DJApp() {
   }, []);
 
   const handleSetupSubmit = () => {
-    if (profile.name.trim()) {
-      localStorage.setItem("djProfile", JSON.stringify(profile));
-      setShowSetup(false);
-    }
+    // Require name + phone on first-time setup
+    if (!profile.name.trim() || !profile.phone.trim()) return;
+    localStorage.setItem("djProfile", JSON.stringify(profile));
+    setProfileSavedAt(Date.now());
+    setShowSetup(false);
   };
 
   const fetchEvents = useCallback(async () => {
