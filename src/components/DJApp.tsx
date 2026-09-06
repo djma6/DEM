@@ -29,6 +29,15 @@ import {
   requestNotificationPermission,
   runDailyEventNotifications,
 } from "@/lib/notifications";
+import {
+  initSync,
+  queueChange,
+  retrySync,
+  subscribeSync,
+  pendingCount,
+  getSyncState,
+  type SyncState,
+} from "@/lib/sync";
 
 // ── Types ──
 interface EventData { id: number; eventType: string; title: string | null; shamsiDate: string; gregorianDate: string; venue: string | null; location: string | null; fee: number; deposit: number; equipmentNeeded: string | null; soundLightProvider: string | null; soundLightProviderPhone: string | null; soundLightRequirements: string | null; soundLightCost: number; description: string | null; customerName: string | null; customerPhone: string | null; guestCount: number; status: string; createdAt: string | null; updatedAt: string | null; }
@@ -51,6 +60,46 @@ function GlassButton({ children, onClick, variant = "default", size = "md", clas
 }
 
 function formatCardNumber(num: string): string { return num.replace(/(\d{4})/g, "$1-").slice(0, -1); }
+
+// ── Cloud sync status badge ──
+function SyncBadge({ state, pending, onRetry, locale }: { state: SyncState; pending: number; onRetry: () => void; locale: Locale; }) {
+  const [spin, setSpin] = useState(false);
+  useEffect(() => {
+    if (state !== "syncing") { setSpin(false); return; }
+    setSpin(true);
+  }, [state]);
+
+  const fa = locale === "fa";
+  const labels: Record<SyncState, string> = {
+    idle: fa ? "ذخیره آنلاین" : "Synced",
+    syncing: fa ? "در حال ذخیره..." : "Saving...",
+    saved: fa ? "ذخیره شد" : "Saved",
+    error: fa ? "ذخیره نشد" : "Not saved",
+  };
+  const styles: Record<SyncState, string> = {
+    idle: "bg-emerald-500/15 border-emerald-500/30 text-emerald-300",
+    syncing: "bg-blue-500/15 border-blue-500/30 text-blue-300",
+    saved: "bg-emerald-500/25 border-emerald-400/40 text-emerald-200",
+    error: "bg-red-500/20 border-red-400/40 text-red-300",
+  };
+  const icons: Record<SyncState, React.ReactNode> = {
+    idle: <CheckCircle size={11} />,
+    syncing: <RefreshCw size={11} className={spin ? "animate-spin" : ""} />,
+    saved: <CheckCircle size={11} />,
+    error: <AlertCircle size={11} />,
+  };
+
+  return (
+    <button
+      onClick={state === "error" ? onRetry : undefined}
+      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border backdrop-blur-xl text-[10px] font-medium transition-all ${styles[state]} ${state === "error" ? "active:scale-95" : "cursor-default"}`}
+      title={state === "error" ? (fa ? "تلاش مجدد برای ذخیره آنلاین" : "Retry online sync") : labels[state]}
+    >
+      {icons[state]}
+      <span>{state === "error" && pending > 0 ? `${pending} ${fa ? "در انتظار" : "pending"}` : labels[state]}</span>
+    </button>
+  );
+}
 
 // ── Main App ──
 export default function DJApp() {
@@ -76,6 +125,8 @@ export default function DJApp() {
   const [shareQrUrl, setShareQrUrl] = useState("");
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [saveBusy, setSaveBusy] = useState(false);
+  const [syncState, setSyncState] = useState<SyncState>("idle");
+  const [syncPending, setSyncPending] = useState(0);
   const [needsInstall, setNeedsInstall] = useState<boolean | null>(null);
   const [notifPerm, setNotifPerm] = useState<NotificationPermission | "unsupported">("default");
   const [googleUser, setGoogleUser] = useState<GoogleUser | null>(null);
@@ -112,6 +163,24 @@ export default function DJApp() {
   // Init + notification permission state
   useEffect(() => {
     setNotifPerm(notificationPermission());
+  }, []);
+
+  // Background sync: restore any pending queue and subscribe to state changes
+  useEffect(() => {
+    initSync();
+    setSyncPending(pendingCount());
+    const unsub = subscribeSync({
+      onStateChange: (s) => {
+        setSyncState(s);
+        setSyncPending(pendingCount());
+      },
+    });
+    const onOnline = () => retrySync();
+    window.addEventListener("online", onOnline);
+    return () => {
+      unsub();
+      window.removeEventListener("online", onOnline);
+    };
   }, []);
 
   // Ask for notification permission after the user profile is set (on first app usage)
@@ -319,16 +388,30 @@ export default function DJApp() {
         payload.soundLightRequirements = "";
         payload.soundLightCost = 0;
       }
-      let res: Response;
-      if (editingEvent) {
-        res = await fetch(`/api/events/${editingEvent.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-      } else {
-        res = await fetch("/api/events", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+
+      // Queue the change; the queue flushes to the server in the background.
+      // Wait until the server confirms before allowing the modal to close.
+      const wasEditingId = editingEvent?.id;
+
+      queueChange(
+        wasEditingId
+          ? { kind: "event-upsert", id: wasEditingId, payload }
+          : { kind: "event-upsert", payload }
+      );
+
+      const started = Date.now();
+      while (Date.now() - started < 12000) {
+        const s = getSyncState();
+        if (s === "saved" || s === "idle") break;
+        if (s === "error") {
+          throw new Error(locale === "fa" ? "ذخیره آنلاین ناموفق بود — اینترنت را بررسی کنید" : "Online save failed — check your connection");
+        }
+        await new Promise((r) => setTimeout(r, 250));
       }
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({})) as { error?: string };
-        throw new Error(err.error || `HTTP ${res.status}`);
+      if (getSyncState() !== "saved" && getSyncState() !== "idle") {
+        throw new Error(locale === "fa" ? "زمان ذخیره آنلاین به پایان رسید" : "Online save timed out");
       }
+
       setShowEventModal(false);
       setEditingEvent(null);
       await fetchEvents();
@@ -339,7 +422,7 @@ export default function DJApp() {
       setSaveBusy(false);
     }
   };
-  const handleDelete = async () => { if (!selectedEvent) return; try { await fetch(`/api/events/${selectedEvent.id}`, { method: "DELETE" }); setShowDeleteConfirm(false); setShowDetailModal(false); setSelectedEvent(null); fetchEvents(); } catch (e) { console.error(e); } };
+  const handleDelete = async () => { if (!selectedEvent) return; try { queueChange({ kind: "event-delete", id: selectedEvent.id }); setShowDeleteConfirm(false); setShowDetailModal(false); setSelectedEvent(null); setTimeout(() => { void fetchEvents(); }, 900); } catch (e) { console.error(e); } };
   const handleReset = async () => { try { await fetch("/api/reset", { method: "DELETE" }); localStorage.clear(); setShowResetConfirm(false); window.location.reload(); } catch (e) { console.error(e); } };
 
   const handleContactPicker = async (target: "customer" | "provider" | "reminder") => { try { if ("contacts" in navigator) { const c = await (navigator as any).contacts.select(["name", "tel"], { multiple: false }); if (c.length > 0) { const name = c[0].name?.[0] || ""; const tel = c[0].tel?.[0] || ""; if (target === "customer") setFormData(p => ({ ...p, customerName: name || p.customerName, customerPhone: tel || p.customerPhone })); else if (target === "provider") setFormData(p => ({ ...p, soundLightProvider: name || p.soundLightProvider, soundLightProviderPhone: tel || p.soundLightProviderPhone })); else if (target === "reminder") setReminderForm(p => ({ ...p, contactName: name || p.contactName, contactPhone: tel || p.contactPhone })); } } else alert(t.contactPickerNotSupported); } catch { alert(t.contactPickerFailed); } };
@@ -352,8 +435,15 @@ export default function DJApp() {
     setReminderForm({ title: "", shamsiDate: shamsi, gregorianDate: formatGregorianDate(g.gy, g.gm, g.gd), time: "", notifyBefore: "0", contactName: "", contactPhone: "", description: "" });
     setReminderDate(shamsi); setShowReminderModal(true);
   };
-  const handleSaveReminder = async () => { try { await fetch("/api/reminders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(reminderForm) }); setShowReminderModal(false); fetchReminders(); } catch (e) { console.error(e); } };
-  const handleDeleteReminder = async (id: number) => { try { await fetch(`/api/reminders/${id}`, { method: "DELETE" }); fetchReminders(); } catch (e) { console.error(e); } };
+  const handleSaveReminder = async () => {
+    if (!reminderForm.title?.trim()) return;
+    try {
+      queueChange({ kind: "reminder-create", payload: reminderForm as unknown as Record<string, unknown> });
+      setShowReminderModal(false);
+      setTimeout(() => { void fetchReminders(); }, 900);
+    } catch (e) { console.error(e); }
+  };
+  const handleDeleteReminder = async (id: number) => { try { queueChange({ kind: "reminder-delete", id }); setTimeout(() => { void fetchReminders(); }, 900); } catch (e) { console.error(e); } };
 
   // ── Google ──
   const handleGoogleSignIn = async () => {
@@ -491,8 +581,8 @@ export default function DJApp() {
   };
 
   // Bank card
-  const handleSaveCard = async () => { try { await fetch("/api/bank-cards", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(bankCardForm) }); setShowBankCardModal(false); setBankCardForm({ title: "", cardNumber: "" }); fetchBankCards(); } catch (e) { console.error(e); } };
-  const handleDeleteCard = async (id: number) => { try { await fetch(`/api/bank-cards/${id}`, { method: "DELETE" }); fetchBankCards(); } catch (e) { console.error(e); } };
+  const handleSaveCard = async () => { try { queueChange({ kind: "bankcard-create", payload: bankCardForm as unknown as Record<string, unknown> }); setShowBankCardModal(false); setBankCardForm({ title: "", cardNumber: "" }); setTimeout(() => { void fetchBankCards(); }, 900); } catch (e) { console.error(e); } };
+  const handleDeleteCard = async (id: number) => { try { queueChange({ kind: "bankcard-delete", id }); setTimeout(() => { void fetchBankCards(); }, 900); } catch (e) { console.error(e); } };
 
   const evList = Array.isArray(events) ? events : [];
   const remList = Array.isArray(reminders) ? reminders : [];
@@ -632,7 +722,15 @@ export default function DJApp() {
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-purple-600 to-red-600 flex items-center justify-center shadow-lg shadow-purple-500/30"><Music size={18} className="text-white" /></div>
             <div><h1 className="text-lg font-bold bg-gradient-to-r from-purple-400 to-red-400 bg-clip-text text-transparent">{t.appName}</h1>{profile.name && <p className="text-[10px] text-gray-400 -mt-0.5">DJ {profile.name}</p>}</div>
           </div>
-          <GlassButton onClick={() => setLocale(locale === "fa" ? "en" : "fa")} size="sm"><Globe size={14} className="text-purple-400" /></GlassButton>
+          <div className="flex items-center gap-2">
+            <SyncBadge
+              state={syncState}
+              pending={syncPending}
+              onRetry={retrySync}
+              locale={locale}
+            />
+            <GlassButton onClick={() => setLocale(locale === "fa" ? "en" : "fa")} size="sm"><Globe size={14} className="text-purple-400" /></GlassButton>
+          </div>
         </div>
       </header>
 

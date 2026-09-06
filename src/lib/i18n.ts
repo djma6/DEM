@@ -170,6 +170,12 @@ export const translations = {
     googleOriginMismatch: "دامنه فعلی در Google Cloud ثبت نشده است. آدرس سایت را در Authorized JavaScript origins اضافه کنید.",
     dateRequired: "تاریخ شمسی و میلادی الزامی است",
     saveFailed: "ذخیره ناموفق",
+    syncOnline: "ذخیره آنلاین",
+    syncSaving: "در حال ذخیره آنلاین...",
+    syncSaved: "ذخیره آنلاین شد",
+    syncError: "ذخیره آنلاین ناموفق",
+    syncPending: "در انتظار ذخیره آنلاین",
+    syncRetry: "تلاش مجدد",
   },
   en: {
     appName: "iGig",
@@ -279,6 +285,12 @@ export const translations = {
     googleOriginMismatch: "This domain is not registered in Google Cloud. Add your site URL to Authorized JavaScript origins.",
     dateRequired: "Shamsi and Gregorian dates are required",
     saveFailed: "Save failed",
+    syncOnline: "Synced online",
+    syncSaving: "Saving online...",
+    syncSaved: "Saved online",
+    syncError: "Online save failed",
+    syncPending: "Pending online save",
+    syncRetry: "Retry",
   },
 } as const;
 
