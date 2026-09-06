@@ -11,27 +11,34 @@ export async function PUT(
     const { id } = await params;
     const body = await request.json();
 
+    if (!body || !body.shamsiDate || !body.gregorianDate) {
+      return NextResponse.json(
+        { error: "shamsiDate and gregorianDate are required" },
+        { status: 400 }
+      );
+    }
+
     const result = await db
       .update(events)
       .set({
-        eventType: body.eventType,
-        title: body.title,
-        shamsiDate: body.shamsiDate,
-        gregorianDate: body.gregorianDate,
-        venue: body.venue,
-        location: body.location,
-        fee: body.fee,
-        deposit: body.deposit,
-        equipmentNeeded: body.equipmentNeeded,
-        soundLightProvider: body.soundLightProvider,
-        soundLightProviderPhone: body.soundLightProviderPhone,
-        soundLightRequirements: body.soundLightRequirements,
-        soundLightCost: body.soundLightCost,
-        description: body.description,
-        customerName: body.customerName,
-        customerPhone: body.customerPhone,
-        guestCount: body.guestCount,
-        status: body.status,
+        eventType: body.eventType || "wedding",
+        title: body.title || null,
+        shamsiDate: String(body.shamsiDate),
+        gregorianDate: String(body.gregorianDate),
+        venue: body.venue || null,
+        location: body.location || null,
+        fee: Number(body.fee) || 0,
+        deposit: Number(body.deposit) || 0,
+        equipmentNeeded: body.equipmentNeeded || null,
+        soundLightProvider: body.soundLightProvider || null,
+        soundLightProviderPhone: body.soundLightProviderPhone || null,
+        soundLightRequirements: body.soundLightRequirements || null,
+        soundLightCost: Number(body.soundLightCost) || 0,
+        description: body.description || null,
+        customerName: body.customerName || null,
+        customerPhone: body.customerPhone || null,
+        guestCount: Number(body.guestCount) || 0,
+        status: body.status || "pending",
         updatedAt: new Date(),
       })
       .where(eq(events.id, parseInt(id)))

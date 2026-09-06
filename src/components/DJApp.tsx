@@ -75,6 +75,7 @@ export default function DJApp() {
   const [cardQrUrl, setCardQrUrl] = useState("");
   const [shareQrUrl, setShareQrUrl] = useState("");
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [saveBusy, setSaveBusy] = useState(false);
   const [needsInstall, setNeedsInstall] = useState<boolean | null>(null);
   const [notifPerm, setNotifPerm] = useState<NotificationPermission | "unsupported">("default");
   const [googleUser, setGoogleUser] = useState<GoogleUser | null>(null);
@@ -277,7 +278,48 @@ export default function DJApp() {
   const openNewEventForm = (date?: string) => { setEditingEvent(null); const sd = date || todayStr; const p = sd.split("/"); const g = toGregorian(parseInt(p[0]), parseInt(p[1]), parseInt(p[2])); setFormData({ eventType: "wedding", title: "", shamsiDate: sd, gregorianDate: formatGregorianDate(g.gy, g.gm, g.gd), venue: "", location: "", fee: 0, deposit: 0, equipmentNeeded: "", soundLightProvider: "", soundLightProviderPhone: "", soundLightRequirements: "", soundLightCost: 0, soundLightEnabled: false, description: "", customerName: "", customerPhone: "", guestCount: 0, status: "pending" }); setFormStep(0); setShowEventModal(true); };
   const openEditEventForm = (ev: EventData) => { setEditingEvent(ev); setFormData({ eventType: ev.eventType, title: ev.title || "", shamsiDate: ev.shamsiDate, gregorianDate: ev.gregorianDate, venue: ev.venue || "", location: ev.location || "", fee: ev.fee, deposit: ev.deposit, equipmentNeeded: ev.equipmentNeeded || "", soundLightProvider: ev.soundLightProvider || "", soundLightProviderPhone: "", soundLightRequirements: ev.soundLightRequirements || "", soundLightCost: ev.soundLightCost, soundLightEnabled: !!(ev.soundLightProvider || ev.soundLightRequirements || ev.soundLightCost), description: ev.description || "", customerName: ev.customerName || "", customerPhone: ev.customerPhone || "", guestCount: ev.guestCount || 0, status: ev.status }); setFormStep(0); setShowEventModal(true); };
   const handleShamsiDateChange = (val: string) => { const p = val.split("/"); if (p.length === 3) { const jy = parseInt(p[0]), jm = parseInt(p[1]), jd = parseInt(p[2]); if (!isNaN(jy) && !isNaN(jm) && !isNaN(jd) && jm >= 1 && jm <= 12 && jd >= 1 && jd <= 31) { try { const g = toGregorian(jy, jm, jd); setFormData(prev => ({ ...prev, shamsiDate: val, gregorianDate: formatGregorianDate(g.gy, g.gm, g.gd) })); return; } catch {} } } setFormData(prev => ({ ...prev, shamsiDate: val })); };
-  const handleSave = async () => { try { if (editingEvent) await fetch(`/api/events/${editingEvent.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(formData) }); else await fetch("/api/events", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(formData) }); setShowEventModal(false); setEditingEvent(null); fetchEvents(); } catch (e) { console.error(e); } };
+  const handleSave = async () => {
+    // Validate required dates before saving
+    if (!formData.shamsiDate?.trim() || !formData.gregorianDate?.trim()) {
+      alert(t.dateRequired || (locale === "fa" ? "تاریخ شمسی و میلادی الزامی است" : "Shamsi and Gregorian dates are required"));
+      return;
+    }
+    setSaveBusy(true);
+    try {
+      // Sanitize payload — strip sound-light fields when toggle is off
+      const payload: Record<string, unknown> = {
+        ...formData,
+        fee: Number(formData.fee) || 0,
+        deposit: Number(formData.deposit) || 0,
+        guestCount: Number(formData.guestCount) || 0,
+        soundLightCost: Number(formData.soundLightCost) || 0,
+      };
+      if (!formData.soundLightEnabled) {
+        payload.soundLightProvider = "";
+        payload.soundLightProviderPhone = "";
+        payload.soundLightRequirements = "";
+        payload.soundLightCost = 0;
+      }
+      let res: Response;
+      if (editingEvent) {
+        res = await fetch(`/api/events/${editingEvent.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      } else {
+        res = await fetch("/api/events", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      }
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      setShowEventModal(false);
+      setEditingEvent(null);
+      await fetchEvents();
+    } catch (e) {
+      console.error("Save event failed:", e);
+      alert(locale === "fa" ? `ذخیره ناموفق:\n${e instanceof Error ? e.message : "خطای ناشناخته"}` : `Save failed:\n${e instanceof Error ? e.message : "Unknown error"}`);
+    } finally {
+      setSaveBusy(false);
+    }
+  };
   const handleDelete = async () => { if (!selectedEvent) return; try { await fetch(`/api/events/${selectedEvent.id}`, { method: "DELETE" }); setShowDeleteConfirm(false); setShowDetailModal(false); setSelectedEvent(null); fetchEvents(); } catch (e) { console.error(e); } };
   const handleReset = async () => { try { await fetch("/api/reset", { method: "DELETE" }); localStorage.clear(); setShowResetConfirm(false); window.location.reload(); } catch (e) { console.error(e); } };
 
@@ -920,7 +962,7 @@ export default function DJApp() {
           <div className="sticky bottom-0 bg-[#1a1a2e]/90 backdrop-blur-xl border-t border-white/5 p-4 flex gap-3">
             <GlassButton onClick={() => { setShowEventModal(false); setEditingEvent(null); }} className="flex-1"><ChevronRight size={16} className="inline ml-1" />{locale === "fa" ? "بازگشت" : "Back"}</GlassButton>
             {formStep > 0 && <GlassButton onClick={() => setFormStep(formStep - 1)} className="flex-1"><ChevronRight size={16} className="inline ml-1" />{locale === "fa" ? "قبلی" : "Prev"}</GlassButton>}
-            {formStep < formSteps.length - 1 ? <GlassButton onClick={() => setFormStep(formStep + 1)} variant="primary" className="flex-1">{locale === "fa" ? "بعدی" : "Next"}<ChevronLeft size={16} className="inline mr-1" /></GlassButton> : <GlassButton onClick={handleSave} variant="success" className="flex-1"><CheckCircle size={16} className="inline ml-2" />{t.save}</GlassButton>}
+            {formStep < formSteps.length - 1 ? <GlassButton onClick={() => setFormStep(formStep + 1)} variant="primary" className="flex-1">{locale === "fa" ? "بعدی" : "Next"}<ChevronLeft size={16} className="inline mr-1" /></GlassButton> : <GlassButton onClick={handleSave} variant="success" className="flex-1" disabled={saveBusy}><CheckCircle size={16} className="inline ml-2" />{saveBusy ? "..." : t.save}</GlassButton>}
           </div>
         </div>
       </div>)}

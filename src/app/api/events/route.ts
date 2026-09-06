@@ -60,26 +60,33 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
+    if (!body || !body.shamsiDate || !body.gregorianDate) {
+      return NextResponse.json(
+        { error: "shamsiDate and gregorianDate are required" },
+        { status: 400 }
+      );
+    }
+
     const result = await db
       .insert(events)
       .values({
         eventType: body.eventType || "wedding",
         title: body.title || null,
-        shamsiDate: body.shamsiDate,
-        gregorianDate: body.gregorianDate,
+        shamsiDate: String(body.shamsiDate),
+        gregorianDate: String(body.gregorianDate),
         venue: body.venue || null,
         location: body.location || null,
-        fee: body.fee || 0,
-        deposit: body.deposit || 0,
+        fee: Number(body.fee) || 0,
+        deposit: Number(body.deposit) || 0,
         equipmentNeeded: body.equipmentNeeded || null,
         soundLightProvider: body.soundLightProvider || null,
         soundLightProviderPhone: body.soundLightProviderPhone || null,
         soundLightRequirements: body.soundLightRequirements || null,
-        soundLightCost: body.soundLightCost || 0,
+        soundLightCost: Number(body.soundLightCost) || 0,
         description: body.description || null,
         customerName: body.customerName || null,
         customerPhone: body.customerPhone || null,
-        guestCount: body.guestCount || 0,
+        guestCount: Number(body.guestCount) || 0,
         status: body.status || "pending",
       })
       .returning();

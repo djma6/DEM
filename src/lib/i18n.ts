@@ -168,6 +168,8 @@ export const translations = {
     tomorrowEvents: "برنامه‌های فردا",
     googleAccessDenied: "دسترسی رد شد. اگر برنامه در حالت Testing است، فقط ایمیل‌های Test User اجازه ورود دارند. برنامه را در Google Cloud → OAuth consent screen روی Publish (Production) بگذارید.",
     googleOriginMismatch: "دامنه فعلی در Google Cloud ثبت نشده است. آدرس سایت را در Authorized JavaScript origins اضافه کنید.",
+    dateRequired: "تاریخ شمسی و میلادی الزامی است",
+    saveFailed: "ذخیره ناموفق",
   },
   en: {
     appName: "iGig",
@@ -275,6 +277,8 @@ export const translations = {
     tomorrowEvents: "Tomorrow's Events",
     googleAccessDenied: "Access denied. If your app is in Testing mode, only Test Users can sign in. Publish the app in Google Cloud → OAuth consent screen.",
     googleOriginMismatch: "This domain is not registered in Google Cloud. Add your site URL to Authorized JavaScript origins.",
+    dateRequired: "Shamsi and Gregorian dates are required",
+    saveFailed: "Save failed",
   },
 } as const;
 
