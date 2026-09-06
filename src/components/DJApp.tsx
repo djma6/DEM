@@ -21,6 +21,14 @@ import {
   downloadBackupFromDrive,
   type GoogleUser,
 } from "@/lib/google";
+import InstallGate from "./InstallGate";
+import { isStandalone, isMobileDevice } from "@/lib/pwa";
+import {
+  notificationsSupported,
+  notificationPermission,
+  requestNotificationPermission,
+  runDailyEventNotifications,
+} from "@/lib/notifications";
 
 // ── Types ──
 interface EventData { id: number; eventType: string; title: string | null; shamsiDate: string; gregorianDate: string; venue: string | null; location: string | null; fee: number; deposit: number; equipmentNeeded: string | null; soundLightProvider: string | null; soundLightProviderPhone: string | null; soundLightRequirements: string | null; soundLightCost: number; description: string | null; customerName: string | null; customerPhone: string | null; guestCount: number; status: string; createdAt: string | null; updatedAt: string | null; }
@@ -67,6 +75,8 @@ export default function DJApp() {
   const [cardQrUrl, setCardQrUrl] = useState("");
   const [shareQrUrl, setShareQrUrl] = useState("");
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [needsInstall, setNeedsInstall] = useState<boolean | null>(null);
+  const [notifPerm, setNotifPerm] = useState<NotificationPermission | "unsupported">("default");
   const [googleUser, setGoogleUser] = useState<GoogleUser | null>(null);
   const [googleToken, setGoogleToken] = useState<string | null>(null);
   const [googleBusy, setGoogleBusy] = useState(false);
@@ -89,6 +99,19 @@ export default function DJApp() {
 
   const t = translations[locale];
   const isRtl = locale === "fa";
+
+  // Install gate: mobile browsers must install the PWA first (desktop exempt)
+  useEffect(() => {
+    let bypass = false;
+    try { bypass = localStorage.getItem("djInstallBypass") === "1"; } catch { /* ignore */ }
+    const mustInstall = isMobileDevice() && !isStandalone() && !bypass;
+    setNeedsInstall(mustInstall);
+  }, []);
+
+  // Notification permission state
+  useEffect(() => {
+    setNotifPerm(notificationPermission());
+  }, []);
 
   // Init
   useEffect(() => {
@@ -168,6 +191,30 @@ export default function DJApp() {
   }, []);
 
   useEffect(() => { if (!showSetup) { fetchEvents(); fetchReminders(); fetchBankCards(); } }, [fetchEvents, fetchReminders, fetchBankCards, showSetup]);
+
+  // Daily notifications for today's + tomorrow's events (once per day)
+  useEffect(() => {
+    if (showSetup || needsInstall !== false) return;
+    if (!Array.isArray(events) || events.length === 0) return;
+    if (notifPerm !== "granted") return;
+    runDailyEventNotifications(events, locale).catch(() => { /* ignore */ });
+  }, [events, locale, showSetup, needsInstall, notifPerm]);
+
+  const handleEnableNotifications = async () => {
+    if (!notificationsSupported()) { alert(t.notificationsUnsupported); return; }
+    const perm = await requestNotificationPermission();
+    setNotifPerm(perm);
+    if (perm === "granted") {
+      await runDailyEventNotifications(events, locale, { force: true });
+    } else if (perm === "denied") {
+      alert(t.notificationsBlocked);
+    }
+  };
+
+  const handleTestNotification = async () => {
+    if (notifPerm !== "granted") { await handleEnableNotifications(); return; }
+    await runDailyEventNotifications(events, locale, { force: true });
+  };
 
   const generateQRCode = async (data: string): Promise<string> => {
     return await QRCode.toDataURL(data, { width: 300, margin: 2, color: { dark: "#1a1a2e", light: "#FFFFFF" } });
@@ -267,7 +314,9 @@ export default function DJApp() {
       const msg = e instanceof Error ? e.message : "";
       if (msg === "NOT_CONFIGURED") alert(t.googleNotConfigured);
       else if (msg === "POPUP_CLOSED") alert(t.signInCancelled);
-      else alert(t.driveFailed);
+      else if (msg === "access_denied") alert(t.googleAccessDenied);
+      else if (msg === "idpiframe_initialization_failed" || msg === "GIS_UNAVAILABLE") alert(t.googleOriginMismatch);
+      else alert(t.driveFailed + (msg ? `\n(${msg})` : ""));
     } finally {
       setGoogleBusy(false);
     }
@@ -397,6 +446,23 @@ export default function DJApp() {
   const lc = "block text-sm font-medium text-gray-300 mb-1.5";
   const sc = "w-full bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl px-4 py-3 text-white focus:outline-none focus:border-purple-400/50 focus:ring-1 focus:ring-purple-400/30 transition-all appearance-none";
   const getDayHoliday = (di: CalendarDay) => { if (calendarType === "shamsi" && di.holiday) return { name: locale === "fa" ? di.holiday.faName : di.holiday.enName, isHoliday: di.holiday.isHoliday }; if (calendarType === "gregorian" && di.gregorianHoliday) return { name: locale === "fa" ? di.gregorianHoliday.faName : di.gregorianHoliday.enName, isHoliday: di.gregorianHoliday.isHoliday }; if (calendarType === "shamsi" && di.gregorianHoliday?.isHoliday) return { name: locale === "fa" ? di.gregorianHoliday.faName : di.gregorianHoliday.enName, isHoliday: true }; if (calendarType === "gregorian" && di.holiday?.isHoliday) return { name: locale === "fa" ? di.holiday.faName : di.holiday.enName, isHoliday: true }; return null; };
+
+  // ── Install gate (mobile only) ──
+  if (needsInstall === null) {
+    return <div className="min-h-screen bg-[#0a0a1a]" />;
+  }
+  if (needsInstall) {
+    return (
+      <InstallGate
+        locale={locale}
+        onLocaleToggle={() => setLocale(locale === "fa" ? "en" : "fa")}
+        onSkip={() => {
+          try { localStorage.setItem("djInstallBypass", "1"); } catch { /* ignore */ }
+          setNeedsInstall(false);
+        }}
+      />
+    );
+  }
 
   // ── Setup ──
   if (showSetup) {
@@ -639,6 +705,36 @@ export default function DJApp() {
                     {googleBusy ? "..." : t.connectGoogle}
                   </button>
                 </>
+              )}
+            </div>
+
+            {/* Notifications */}
+            <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-4">
+              <h3 className="text-base font-bold text-purple-300 mb-3 flex items-center gap-2">
+                <Bell size={18} />{t.notifications}
+              </h3>
+              <p className="text-[11px] text-gray-400 mb-3">{t.notificationsDesc}</p>
+              {notifPerm === "granted" ? (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/25 rounded-xl px-3 py-2.5">
+                    <CheckCircle size={15} className="text-emerald-400 flex-shrink-0" />
+                    <span className="text-xs text-emerald-300">{t.notificationsEnabled}</span>
+                  </div>
+                  <GlassButton onClick={handleTestNotification} className="w-full">
+                    <Bell size={15} className="inline ml-2" />{t.testNotification}
+                  </GlassButton>
+                </div>
+              ) : notifPerm === "denied" ? (
+                <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/25 rounded-xl px-3 py-2.5">
+                  <AlertCircle size={15} className="text-red-400 flex-shrink-0 mt-0.5" />
+                  <span className="text-[11px] text-red-300 leading-relaxed">{t.notificationsBlocked}</span>
+                </div>
+              ) : notifPerm === "unsupported" ? (
+                <p className="text-[11px] text-gray-500">{t.notificationsUnsupported}</p>
+              ) : (
+                <GlassButton onClick={handleEnableNotifications} variant="primary" className="w-full">
+                  <Bell size={15} className="inline ml-2" />{t.enableNotifications}
+                </GlassButton>
               )}
             </div>
 

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'igig-v2';
+const CACHE_NAME = 'igig-v3';
 const STATIC_ASSETS = [
   '/manifest.json',
   '/icons/icon-192.png',
@@ -44,4 +44,17 @@ self.addEventListener('fetch', (event) => {
       caches.match(event.request).then((cached) => cached || fetch(event.request))
     );
   }
+});
+
+// Focus/open the app when a notification is tapped
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      for (const client of list) {
+        if ('focus' in client) return client.focus();
+      }
+      if (self.clients.openWindow) return self.clients.openWindow('/');
+    })
+  );
 });
