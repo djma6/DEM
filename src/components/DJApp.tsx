@@ -109,10 +109,29 @@ export default function DJApp() {
     setNeedsInstall(mustInstall);
   }, []);
 
-  // Notification permission state
+  // Init + notification permission state
   useEffect(() => {
     setNotifPerm(notificationPermission());
   }, []);
+
+  // Ask for notification permission after the user profile is set (on first app usage)
+  useEffect(() => {
+    if (showSetup || needsInstall !== false) return;
+    if (!notificationsSupported()) return;
+    if (notifPerm !== "default") return;
+    let asked = false;
+    try { asked = localStorage.getItem("djNotifAsked") === "1"; } catch { /* ignore */ }
+    if (asked) return;
+
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    try { localStorage.setItem("djNotifAsked", "1"); } catch { /* ignore */ }
+    timer = setTimeout(async () => {
+      const perm = await requestNotificationPermission();
+      setNotifPerm(perm);
+    }, 1500);
+
+    return () => { if (timer) clearTimeout(timer); };
+  }, [showSetup, needsInstall, notifPerm]);
 
   // Init
   useEffect(() => {
