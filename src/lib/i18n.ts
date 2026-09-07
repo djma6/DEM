@@ -176,6 +176,23 @@ export const translations = {
     syncError: "ذخیره آنلاین ناموفق",
     syncPending: "در انتظار ذخیره آنلاین",
     syncRetry: "تلاش مجدد",
+    // Bank card / Sheba sharing
+    sendBankCard: "ارسال کارت بانکی",
+    sendSheba: "ارسال شبا",
+    sheba: "شماره شبا",
+    shebaNumber: "شماره شبا (IBAN)",
+    addSheba: "ثبت شماره شبا",
+    saveSheba: "ذخیره شبا",
+    shebaSaved: "شماره شبا ذخیره شد",
+    noCardYet: "هنوز کارت بانکی ثبت نکرده‌اید. از بخش تنظیمات یک کارت اضافه کنید.",
+    noShebaYet: "هنوز شماره شبا ثبت نکرده‌اید. از بخش تنظیمات آن را اضافه کنید.",
+    recipientNumber: "شماره گیرنده",
+    chooseFromContacts: "انتخاب از مخاطبین",
+    messagePreview: "پیش‌نمایش پیام",
+    sendSms: "ارسال پیامک",
+    // Storage mode
+    localOnly: "ذخیره روی گوشی",
+    localOnlyDesc: "برای ذخیره آنلاین، با حساب گوگل وارد شوید",
   },
   en: {
     appName: "iGig",
@@ -291,6 +308,23 @@ export const translations = {
     syncError: "Online save failed",
     syncPending: "Pending online save",
     syncRetry: "Retry",
+    // Bank card / Sheba sharing
+    sendBankCard: "Send Bank Card",
+    sendSheba: "Send IBAN",
+    sheba: "IBAN (Sheba)",
+    shebaNumber: "IBAN / Sheba Number",
+    addSheba: "Add IBAN Number",
+    saveSheba: "Save IBAN",
+    shebaSaved: "IBAN saved",
+    noCardYet: "No bank card saved yet. Add one from Settings.",
+    noShebaYet: "No IBAN saved yet. Add one from Settings.",
+    recipientNumber: "Recipient Number",
+    chooseFromContacts: "Choose from contacts",
+    messagePreview: "Message Preview",
+    sendSms: "Send SMS",
+    // Storage mode
+    localOnly: "Saved on this device",
+    localOnlyDesc: "Sign in with Google to enable online saving",
   },
 } as const;
 

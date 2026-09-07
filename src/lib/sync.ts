@@ -22,6 +22,7 @@ const STATE_KEY = "djLastSyncAt";
 let queue: QueueItem[] = [];
 let flushing = false;
 let state: SyncState = "idle";
+let enabled = false; // online sync is only enabled for Google-signed-in users
 const listeners = new Set<Listener>();
 
 function persistQueue() {
@@ -48,6 +49,20 @@ function emit(next: SyncState, detail?: string) {
 
 export function getSyncState(): SyncState {
   return state;
+}
+
+/** Online sync is only used when the user signed in with Google. */
+export function setSyncEnabled(value: boolean): void {
+  enabled = value;
+  if (!value) {
+    queue = [];
+    persistQueue();
+    emit("idle");
+  }
+}
+
+export function isSyncEnabled(): boolean {
+  return enabled;
 }
 
 export function pendingCount(): number {
@@ -109,6 +124,7 @@ async function send(item: QueueItem): Promise<void> {
 
 /** Run the queue in the background. Safe to call repeatedly. */
 export async function flushQueue(): Promise<SyncState> {
+  if (!enabled) return state;
   if (flushing) return state;
   if (queue.length === 0) {
     if (state !== "error") emit("idle");
@@ -142,6 +158,7 @@ export async function flushQueue(): Promise<SyncState> {
 
 /** Queue a change and start a background flush immediately. */
 export function queueChange(item: QueueItem): void {
+  if (!enabled) return; // local-only mode: nothing is sent online
   queue.push(item);
   persistQueue();
   void flushQueue();
@@ -154,5 +171,5 @@ export function retrySync(): void {
 /** Load any previously persisted queue (e.g. after a reload). */
 export function initSync(): void {
   loadQueue();
-  if (queue.length > 0) void flushQueue();
+  if (enabled && queue.length > 0) void flushQueue();
 }

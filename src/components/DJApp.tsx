@@ -6,7 +6,7 @@ import {
   Users, Phone, FileText, Trash2, Edit3, AlertCircle, Clock, CreditCard,
   Globe, Speaker, Lightbulb, PartyPopper, LayoutDashboard, List, Settings,
   Download, Upload, RefreshCw, User, CheckCircle, Copy, QrCode, Contact,
-  Bell, Share2, Mail, CreditCard as CardIcon, LogOut,
+  Bell, Share2, Mail, CreditCard as CardIcon, LogOut, Landmark, Smartphone,
 } from "lucide-react";
 import { translations, type Locale } from "@/lib/i18n";
 import { toJalaali, toGregorian, jalaaliMonthLength, formatJalaaliDate, formatGregorianDate, todayJalaali } from "@/lib/jalaali";
@@ -37,8 +37,27 @@ import {
   subscribeSync,
   pendingCount,
   getSyncState,
+  setSyncEnabled,
   type SyncState,
 } from "@/lib/sync";
+import ShareBankModal, { type ShareKind } from "./ShareBankModal";
+import {
+  loadProfile,
+  saveProfile,
+  getLocalEvents,
+  upsertLocalEvent,
+  deleteLocalEvent,
+  getLocalReminders,
+  addLocalReminder,
+  deleteLocalReminder,
+  getBankCards,
+  addBankCard,
+  deleteBankCard,
+  getSheba,
+  saveSheba,
+  computeStats,
+  type LocalEvent,
+} from "@/lib/localStore";
 
 // ── Types ──
 interface EventData { id: number; eventType: string; title: string | null; shamsiDate: string; gregorianDate: string; venue: string | null; location: string | null; fee: number; deposit: number; equipmentNeeded: string | null; soundLightProvider: string | null; soundLightProviderPhone: string | null; soundLightRequirements: string | null; soundLightCost: number; description: string | null; customerName: string | null; customerPhone: string | null; guestCount: number; status: string; createdAt: string | null; updatedAt: string | null; }
@@ -131,11 +150,18 @@ export default function DJApp() {
   const [profileSavedAt, setProfileSavedAt] = useState<number | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showReminderDatePicker, setShowReminderDatePicker] = useState(false);
+  const [sheba, setSheba] = useState("");
+  const [shebaDraft, setShebaDraft] = useState("");
+  const [shareKind, setShareKind] = useState<ShareKind | null>(null);
   const [needsInstall, setNeedsInstall] = useState<boolean | null>(null);
   const [notifPerm, setNotifPerm] = useState<NotificationPermission | "unsupported">("default");
   const [googleUser, setGoogleUser] = useState<GoogleUser | null>(null);
   const [googleToken, setGoogleToken] = useState<string | null>(null);
   const [googleBusy, setGoogleBusy] = useState(false);
+
+  // Online storage is only used when the user signed in with Google
+  const onlineMode = !!googleUser;
+
   const [selectedEvent, setSelectedEvent] = useState<EventData | null>(null);
   const [editingEvent, setEditingEvent] = useState<EventData | null>(null);
   const [calendarType, setCalendarType] = useState<"shamsi" | "gregorian">("shamsi");
@@ -206,37 +232,51 @@ export default function DJApp() {
     return () => { if (timer) clearTimeout(timer); };
   }, [showSetup, needsInstall, notifPerm]);
 
-  // Init
+  // Init — restore Google session and the profile stored for that Gmail
   useEffect(() => {
+    let savedEmail: string | null = null;
     try {
       const savedGoogle = localStorage.getItem("djGoogleUser");
-      if (savedGoogle) setGoogleUser(JSON.parse(savedGoogle));
-    } catch { /* ignore */ }
-    try {
-      const saved = localStorage.getItem("djProfile");
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed && parsed.name) {
-          setProfile(parsed);
-          setShowSetup(false);
-          return;
-        }
+      if (savedGoogle) {
+        const gu = JSON.parse(savedGoogle) as GoogleUser;
+        setGoogleUser(gu);
+        savedEmail = gu?.email || null;
       }
-    } catch (e) {
-      console.error("Failed to parse djProfile from localStorage", e);
+    } catch { /* ignore */ }
+
+    setSheba(getSheba());
+
+    const stored = loadProfile(savedEmail);
+    if (stored && stored.name) {
+      setProfile(stored);
+      setShowSetup(false);
+      return;
     }
     setShowSetup(true);
   }, []);
 
+  // Enable/disable online sync whenever the Google session changes
+  useEffect(() => {
+    setSyncEnabled(!!googleUser);
+  }, [googleUser]);
+
   const handleSetupSubmit = () => {
     // Require name + phone on first-time setup
     if (!profile.name.trim() || !profile.phone.trim()) return;
-    localStorage.setItem("djProfile", JSON.stringify(profile));
+    saveProfile(profile, googleUser?.email);
     setProfileSavedAt(Date.now());
     setShowSetup(false);
   };
 
   const fetchEvents = useCallback(async () => {
+    // Local-only mode when the user is not signed in with Google
+    if (!onlineMode) {
+      const local = getLocalEvents();
+      setEvents(local as unknown as EventData[]);
+      setStats(computeStats(local) as unknown as Stats);
+      setLoading(false);
+      return;
+    }
     try {
       const r = await fetch("/api/events");
       if (r.ok) {
@@ -252,9 +292,13 @@ export default function DJApp() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [onlineMode]);
 
   const fetchReminders = useCallback(async () => {
+    if (!onlineMode) {
+      setReminders(getLocalReminders() as unknown as ReminderData[]);
+      return;
+    }
     try {
       const r = await fetch("/api/reminders");
       if (r.ok) {
@@ -267,21 +311,11 @@ export default function DJApp() {
       console.error("Fetch reminders failed:", e);
       setReminders([]);
     }
-  }, []);
+  }, [onlineMode]);
 
+  // Bank cards are always stored on the device only — never uploaded
   const fetchBankCards = useCallback(async () => {
-    try {
-      const r = await fetch("/api/bank-cards");
-      if (r.ok) {
-        const data = await r.json();
-        setBankCards(Array.isArray(data) ? data : []);
-      } else {
-        setBankCards([]);
-      }
-    } catch (e) {
-      console.error("Fetch bank cards failed:", e);
-      setBankCards([]);
-    }
+    setBankCards(getBankCards() as unknown as BankCardData[]);
   }, []);
 
   useEffect(() => { if (!showSetup) { fetchEvents(); fetchReminders(); fetchBankCards(); } }, [fetchEvents, fetchReminders, fetchBankCards, showSetup]);
@@ -426,10 +460,19 @@ export default function DJApp() {
         payload.soundLightCost = 0;
       }
 
-      // Queue the change; the queue flushes to the server in the background.
-      // Wait until the server confirms before allowing the modal to close.
       const wasEditingId = editingEvent?.id;
 
+      // Local-only mode: save straight to the device, no network involved
+      if (!onlineMode) {
+        upsertLocalEvent(payload as Partial<LocalEvent>, wasEditingId);
+        setShowEventModal(false);
+        setEditingEvent(null);
+        await fetchEvents();
+        return;
+      }
+
+      // Queue the change; the queue flushes to the server in the background.
+      // Wait until the server confirms before allowing the modal to close.
       queueChange(
         wasEditingId
           ? { kind: "event-upsert", id: wasEditingId, payload }
@@ -459,7 +502,21 @@ export default function DJApp() {
       setSaveBusy(false);
     }
   };
-  const handleDelete = async () => { if (!selectedEvent) return; try { queueChange({ kind: "event-delete", id: selectedEvent.id }); setShowDeleteConfirm(false); setShowDetailModal(false); setSelectedEvent(null); setTimeout(() => { void fetchEvents(); }, 900); } catch (e) { console.error(e); } };
+  const handleDelete = async () => {
+    if (!selectedEvent) return;
+    try {
+      if (onlineMode) {
+        queueChange({ kind: "event-delete", id: selectedEvent.id });
+        setTimeout(() => { void fetchEvents(); }, 900);
+      } else {
+        deleteLocalEvent(selectedEvent.id);
+        void fetchEvents();
+      }
+      setShowDeleteConfirm(false);
+      setShowDetailModal(false);
+      setSelectedEvent(null);
+    } catch (e) { console.error(e); }
+  };
   const handleReset = async () => { try { await fetch("/api/reset", { method: "DELETE" }); localStorage.clear(); setShowResetConfirm(false); window.location.reload(); } catch (e) { console.error(e); } };
 
   const handleContactPicker = async (target: "customer" | "provider" | "reminder") => { try { if ("contacts" in navigator) { const c = await (navigator as any).contacts.select(["name", "tel"], { multiple: false }); if (c.length > 0) { const name = c[0].name?.[0] || ""; const tel = c[0].tel?.[0] || ""; if (target === "customer") setFormData(p => ({ ...p, customerName: name || p.customerName, customerPhone: tel || p.customerPhone })); else if (target === "provider") setFormData(p => ({ ...p, soundLightProvider: name || p.soundLightProvider, soundLightProviderPhone: tel || p.soundLightProviderPhone })); else if (target === "reminder") setReminderForm(p => ({ ...p, contactName: name || p.contactName, contactPhone: tel || p.contactPhone })); } } else alert(t.contactPickerNotSupported); } catch { alert(t.contactPickerFailed); } };
@@ -475,12 +532,27 @@ export default function DJApp() {
   const handleSaveReminder = async () => {
     if (!reminderForm.title?.trim()) return;
     try {
-      queueChange({ kind: "reminder-create", payload: reminderForm as unknown as Record<string, unknown> });
+      if (onlineMode) {
+        queueChange({ kind: "reminder-create", payload: reminderForm as unknown as Record<string, unknown> });
+        setTimeout(() => { void fetchReminders(); }, 900);
+      } else {
+        addLocalReminder(reminderForm);
+        void fetchReminders();
+      }
       setShowReminderModal(false);
-      setTimeout(() => { void fetchReminders(); }, 900);
     } catch (e) { console.error(e); }
   };
-  const handleDeleteReminder = async (id: number) => { try { queueChange({ kind: "reminder-delete", id }); setTimeout(() => { void fetchReminders(); }, 900); } catch (e) { console.error(e); } };
+  const handleDeleteReminder = async (id: number) => {
+    try {
+      if (onlineMode) {
+        queueChange({ kind: "reminder-delete", id });
+        setTimeout(() => { void fetchReminders(); }, 900);
+      } else {
+        deleteLocalReminder(id);
+        void fetchReminders();
+      }
+    } catch (e) { console.error(e); }
+  };
 
   // ── Google ──
   const handleGoogleSignIn = async () => {
@@ -492,7 +564,16 @@ export default function DJApp() {
       setGoogleToken(token);
       setGoogleUser(user);
       localStorage.setItem("djGoogleUser", JSON.stringify(user));
-      // Prefill profile from Google, keep anything user already typed
+
+      // If this Gmail already has a saved profile, restore it and skip setup
+      const existing = loadProfile(user.email);
+      if (existing && existing.name && existing.phone) {
+        setProfile(existing);
+        setShowSetup(false);
+        return;
+      }
+
+      // Otherwise prefill from Google, keeping anything the user already typed
       setProfile(p => ({
         ...p,
         name: p.name || user.name || "",
@@ -594,7 +675,7 @@ export default function DJApp() {
       });
       if (payload.profile?.name) {
         setProfile(payload.profile);
-        localStorage.setItem("djProfile", JSON.stringify(payload.profile));
+        saveProfile(payload.profile, googleUser?.email);
       }
       fetchEvents(); fetchReminders(); fetchBankCards();
       alert(t.driveRestoreSuccess);
@@ -618,8 +699,25 @@ export default function DJApp() {
   };
 
   // Bank card
-  const handleSaveCard = async () => { try { queueChange({ kind: "bankcard-create", payload: bankCardForm as unknown as Record<string, unknown> }); setShowBankCardModal(false); setBankCardForm({ title: "", cardNumber: "" }); setTimeout(() => { void fetchBankCards(); }, 900); } catch (e) { console.error(e); } };
-  const handleDeleteCard = async (id: number) => { try { queueChange({ kind: "bankcard-delete", id }); setTimeout(() => { void fetchBankCards(); }, 900); } catch (e) { console.error(e); } };
+  // Bank cards + Sheba live only on this device (never uploaded anywhere)
+  const handleSaveCard = async () => {
+    try {
+      addBankCard(bankCardForm.title, bankCardForm.cardNumber);
+      setShowBankCardModal(false);
+      setBankCardForm({ title: "", cardNumber: "" });
+      void fetchBankCards();
+    } catch (e) { console.error(e); }
+  };
+  const handleDeleteCard = async (id: number) => {
+    try { deleteBankCard(id); void fetchBankCards(); } catch (e) { console.error(e); }
+  };
+  const handleSaveSheba = () => {
+    const clean = shebaDraft.replace(/\s/g, "").toUpperCase();
+    saveSheba(clean);
+    setSheba(clean);
+    setShebaDraft("");
+    alert(t.shebaSaved);
+  };
 
   const evList = Array.isArray(events) ? events : [];
   const remList = Array.isArray(reminders) ? reminders : [];
@@ -760,12 +858,23 @@ export default function DJApp() {
             <div><h1 className="text-lg font-bold bg-gradient-to-r from-purple-400 to-red-400 bg-clip-text text-transparent">{t.appName}</h1>{profile.name && <p className="text-[10px] text-gray-400 -mt-0.5">DJ {profile.name}</p>}</div>
           </div>
           <div className="flex items-center gap-2">
-            <SyncBadge
-              state={syncState}
-              pending={syncPending}
-              onRetry={retrySync}
-              locale={locale}
-            />
+            {onlineMode ? (
+              <SyncBadge
+                state={syncState}
+                pending={syncPending}
+                onRetry={retrySync}
+                locale={locale}
+              />
+            ) : (
+              <button
+                onClick={() => setActiveTab("settings")}
+                title={t.localOnlyDesc}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border backdrop-blur-xl text-[10px] font-medium bg-amber-500/15 border-amber-500/30 text-amber-300 active:scale-95 transition-all"
+              >
+                <Smartphone size={11} />
+                <span>{t.localOnly}</span>
+              </button>
+            )}
             <GlassButton onClick={() => setLocale(locale === "fa" ? "en" : "fa")} size="sm"><Globe size={14} className="text-purple-400" /></GlassButton>
           </div>
         </div>
@@ -805,6 +914,18 @@ export default function DJApp() {
             <GlassButton onClick={() => { generateShareQR(); setShowShareCard(true); }} variant="primary" className="w-full mt-4">
               <Share2 size={16} className="inline ml-2" />{t.share}
             </GlassButton>
+
+            {/* Send bank card / Sheba by SMS */}
+            <section className="mt-3 grid grid-cols-2 gap-2">
+              <GlassButton onClick={() => setShareKind("card")} className="w-full !bg-emerald-500/12 !border-emerald-400/30">
+                <CardIcon size={15} className="inline ml-2 text-emerald-300" />
+                <span className="text-emerald-200">{t.sendBankCard}</span>
+              </GlassButton>
+              <GlassButton onClick={() => setShareKind("sheba")} className="w-full !bg-blue-500/12 !border-blue-400/30">
+                <Landmark size={15} className="inline ml-2 text-blue-300" />
+                <span className="text-blue-200">{t.sendSheba}</span>
+              </GlassButton>
+            </section>
             {/* Upcoming Events Box */}
             <section className="mt-4">
               <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl overflow-hidden">
@@ -858,10 +979,10 @@ export default function DJApp() {
         {activeTab === "settings" && (<section className="mt-4 space-y-4">
             <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-4"><h3 className="text-base font-bold text-purple-300 mb-4 flex items-center gap-2"><User size={18} />{t.profile}</h3>
               <div className="space-y-3">
-                <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-3 py-2"><User size={14} className="text-purple-400" /><input type="text" value={profile.name} onChange={e => { setProfile(p => ({ ...p, name: e.target.value })); localStorage.setItem("djProfile", JSON.stringify({ ...profile, name: e.target.value })); }} className="flex-1 bg-transparent text-white text-sm focus:outline-none" /></div>
-                <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-3 py-2"><Phone size={14} className="text-blue-400" /><input type="tel" value={profile.phone} onChange={e => { setProfile(p => ({ ...p, phone: e.target.value })); localStorage.setItem("djProfile", JSON.stringify({ ...profile, phone: e.target.value })); }} className="flex-1 bg-transparent text-white text-sm focus:outline-none" dir="ltr" /></div>
-                <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-3 py-2"><Mail size={14} className="text-emerald-400" /><input type="email" value={profile.email} onChange={e => { setProfile(p => ({ ...p, email: e.target.value })); localStorage.setItem("djProfile", JSON.stringify({ ...profile, email: e.target.value })); }} className="flex-1 bg-transparent text-white text-sm focus:outline-none" dir="ltr" /></div>
-                <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-3 py-2"><Globe size={14} className="text-pink-400" /><input type="text" value={profile.instagram} onChange={e => { setProfile(p => ({ ...p, instagram: e.target.value })); localStorage.setItem("djProfile", JSON.stringify({ ...profile, instagram: e.target.value })); }} className="flex-1 bg-transparent text-white text-sm focus:outline-none" dir="ltr" /></div>
+                <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-3 py-2"><User size={14} className="text-purple-400" /><input type="text" value={profile.name} onChange={e => { setProfile(p => ({ ...p, name: e.target.value })); saveProfile({ ...profile, name: e.target.value }, googleUser?.email); }} className="flex-1 bg-transparent text-white text-sm focus:outline-none" /></div>
+                <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-3 py-2"><Phone size={14} className="text-blue-400" /><input type="tel" value={profile.phone} onChange={e => { setProfile(p => ({ ...p, phone: e.target.value })); saveProfile({ ...profile, phone: e.target.value }, googleUser?.email); }} className="flex-1 bg-transparent text-white text-sm focus:outline-none" dir="ltr" /></div>
+                <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-3 py-2"><Mail size={14} className="text-emerald-400" /><input type="email" value={profile.email} onChange={e => { setProfile(p => ({ ...p, email: e.target.value })); saveProfile({ ...profile, email: e.target.value }, googleUser?.email); }} className="flex-1 bg-transparent text-white text-sm focus:outline-none" dir="ltr" /></div>
+                <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-3 py-2"><Globe size={14} className="text-pink-400" /><input type="text" value={profile.instagram} onChange={e => { setProfile(p => ({ ...p, instagram: e.target.value })); saveProfile({ ...profile, instagram: e.target.value }, googleUser?.email); }} className="flex-1 bg-transparent text-white text-sm focus:outline-none" dir="ltr" /></div>
               </div>
             </div>
             {/* Google Account + Drive */}
@@ -961,6 +1082,40 @@ export default function DJApp() {
               <GlassButton onClick={() => { setBankCardForm({ title: "", cardNumber: "" }); setShowBankCardModal(true); }} variant="primary" className="w-full"><Plus size={14} className="inline ml-1" />{t.addCard}</GlassButton>
             </div>
 
+            {/* Sheba / IBAN — stored on this device only */}
+            <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-4">
+              <h3 className="text-base font-bold text-purple-300 mb-3 flex items-center gap-2">
+                <Landmark size={18} />{t.sheba}
+              </h3>
+              {sheba ? (
+                <div className="bg-gradient-to-r from-blue-900/30 to-purple-900/30 border border-blue-500/20 rounded-xl p-3 mb-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-medium text-blue-300">{t.shebaNumber}</span>
+                    <div className="flex items-center gap-1">
+                      <GlassButton onClick={() => { navigator.clipboard.writeText(sheba); alert(t.copied); }} size="sm" className="!px-2 !py-1"><Copy size={12} /></GlassButton>
+                      <GlassButton onClick={() => { saveSheba(""); setSheba(""); }} size="sm" variant="danger" className="!px-2 !py-1"><Trash2 size={12} /></GlassButton>
+                    </div>
+                  </div>
+                  <p className="text-sm font-mono text-white tracking-wider break-all" dir="ltr">{sheba}</p>
+                </div>
+              ) : null}
+              <label className={lc}>{t.addSheba}</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={shebaDraft}
+                  onChange={e => setShebaDraft(e.target.value.toUpperCase())}
+                  className={ic}
+                  placeholder="IR000000000000000000000000"
+                  dir="ltr"
+                  maxLength={26}
+                />
+                <GlassButton onClick={handleSaveSheba} variant="success" size="md" disabled={shebaDraft.replace(/\s/g, "").length < 24}>
+                  <CheckCircle size={16} />
+                </GlassButton>
+              </div>
+            </div>
+
             <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-4"><h3 className="text-base font-bold text-red-300 mb-4 flex items-center gap-2"><AlertCircle size={18} />{t.dangerZone}</h3><GlassButton onClick={() => setShowResetConfirm(true)} variant="danger" className="w-full"><RefreshCw size={16} className="inline ml-2" />{t.resetApp}</GlassButton></div>
 
             {/* Logout */}
@@ -991,6 +1146,18 @@ export default function DJApp() {
           </div>
         </div>
       </div>)}
+
+      {/* Send bank card / Sheba via SMS */}
+      {shareKind && (
+        <ShareBankModal
+          locale={locale}
+          djName={profile.name}
+          kind={shareKind}
+          cards={bankCards}
+          sheba={sheba}
+          onClose={() => setShareKind(null)}
+        />
+      )}
 
       {/* Date Picker (event form) */}
       {showDatePicker && (
@@ -1156,7 +1323,7 @@ export default function DJApp() {
       </div>)}
 
       {/* FAB */}
-      {!showEventModal && !showDetailModal && !showDeleteConfirm && !showResetConfirm && !showLogoutConfirm && !selectedDate && !showQRModal && !showMonthPicker && !showReminderModal && !showBankCardModal && !showShareCard && !showCardQR && !showDatePicker && !showReminderDatePicker && activeTab !== "settings" && (
+      {!showEventModal && !showDetailModal && !showDeleteConfirm && !showResetConfirm && !showLogoutConfirm && !selectedDate && !showQRModal && !showMonthPicker && !showReminderModal && !showBankCardModal && !showShareCard && !showCardQR && !showDatePicker && !showReminderDatePicker && !shareKind && activeTab !== "settings" && (
         <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-30"><GlassButton onClick={() => openNewEventForm()} variant="primary" size="lg" className="shadow-2xl shadow-purple-500/50"><Plus size={22} className="inline ml-2" />{t.newEvent}</GlassButton></div>
       )}
 
