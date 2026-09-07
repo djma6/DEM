@@ -108,3 +108,19 @@ button {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+/* Day / night clock indicator animations */
+@keyframes igig-float {
+  0%, 100% { transform: translate(-50%, -50%) translateY(0); }
+  50%      { transform: translate(-50%, -50%) translateY(-3px); }
+}
+
+@keyframes igig-glow {
+  0%, 100% { opacity: 0.45; transform: scale(2.1); }
+  50%      { opacity: 0.85; transform: scale(2.5); }
+}
+
+@keyframes igig-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}

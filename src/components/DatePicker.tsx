@@ -11,7 +11,7 @@ import {
   formatGregorianDate,
   todayJalaali,
 } from "@/lib/jalaali";
-import { getShamsiHoliday, getGregorianHoliday } from "@/lib/holidays";
+import { getShamsiHoliday, getGregorianHoliday, categoryStyle, type HolidayCategory } from "@/lib/holidays";
 
 interface PickerDay {
   day: number;
@@ -22,6 +22,8 @@ interface PickerDay {
   isHoliday: boolean;
   isOccasion: boolean;
   holidayName: string | null;
+  category: HolidayCategory | null;
+  emoji?: string;
 }
 
 export default function DatePicker({
@@ -72,7 +74,7 @@ export default function DatePicker({
     const days: PickerDay[] = [];
     for (let d = 1; d <= len; d++) {
       const g = toGregorian(year, month, d);
-      const sh = getShamsiHoliday(month, d);
+      const sh = getShamsiHoliday(month, d, year);
       const gh = getGregorianHoliday(g.gm, g.gd);
       const h = sh || gh;
       days.push({
@@ -84,6 +86,8 @@ export default function DatePicker({
         isHoliday: Boolean(h?.isHoliday),
         isOccasion: Boolean(h && !h.isHoliday),
         holidayName: h ? (locale === "fa" ? h.faName : h.enName) : null,
+        category: h?.category ?? null,
+        emoji: h?.emoji,
       });
     }
     return { days, start };
@@ -97,7 +101,7 @@ export default function DatePicker({
     for (let d = 1; d <= len; d++) {
       let j;
       try { j = toJalaali(year, month, d); } catch { continue; }
-      const sh = getShamsiHoliday(j.jm, j.jd);
+      const sh = getShamsiHoliday(j.jm, j.jd, j.jy);
       const gh = getGregorianHoliday(month, d);
       const h = sh || gh;
       days.push({
@@ -109,6 +113,8 @@ export default function DatePicker({
         isHoliday: Boolean(h?.isHoliday),
         isOccasion: Boolean(h && !h.isHoliday),
         holidayName: h ? (locale === "fa" ? h.faName : h.enName) : null,
+        category: h?.category ?? null,
+        emoji: h?.emoji,
       });
     }
     return { days, start };
@@ -272,27 +278,32 @@ export default function DatePicker({
         <div className="grid grid-cols-7 gap-1">
           {Array.from({ length: data.start }).map((_, i) => <div key={`e${i}`} className="aspect-square" />)}
           {data.days.map(d => {
+            const style = d.category ? categoryStyle(d.category, d.isHoliday) : null;
             let cls = "text-gray-300 bg-white/5 border-white/10 hover:bg-white/10";
             if (d.isSelected) {
               cls = "bg-gradient-to-br from-purple-600 to-red-600 border-purple-400/60 text-white font-bold shadow-lg shadow-purple-500/40 scale-105";
             } else if (d.isToday) {
               cls = "bg-purple-500/20 border-purple-400/50 text-purple-200 font-bold";
-            } else if (d.isHoliday) {
-              cls = "bg-red-500/12 border-red-400/30 text-red-300";
-            } else if (d.isOccasion) {
-              cls = "bg-amber-500/10 border-amber-400/25 text-amber-200";
+            } else if (style) {
+              cls = style.cell;
             }
             return (
               <button
                 key={`${d.jy}-${d.jm}-${d.jd}`}
                 onClick={() => setSelected({ jy: d.jy, jm: d.jm, jd: d.jd })}
                 title={d.holidayName || undefined}
-                className={`aspect-square rounded-xl border flex flex-col items-center justify-center transition-all active:scale-95 ${cls}`}
+                className={`relative aspect-square rounded-xl border flex flex-col items-center justify-center transition-all active:scale-95 ${cls}`}
               >
+                {d.emoji && !d.isSelected && (
+                  <span className="absolute top-0 left-0.5 text-[8px] leading-none">{d.emoji}</span>
+                )}
                 <span className="text-[12px] leading-none">{d.day}</span>
                 <span className="text-[7px] leading-none opacity-60 mt-0.5" dir="ltr">
                   {view === "shamsi" ? d.gd : d.jd}
                 </span>
+                {style && !d.isSelected && !d.isToday && (
+                  <span className={`absolute top-0.5 right-0.5 rounded-full ${d.isHoliday ? "w-1.5 h-1.5" : "w-1 h-1"} ${style.dot}`} />
+                )}
               </button>
             );
           })}
@@ -315,6 +326,18 @@ export default function DatePicker({
             <span className="text-xs font-medium text-blue-200" dir="ltr">{selGregorian}</span>
             <span className="text-[9px] text-blue-400">{locale === "fa" ? "میلادی" : "GR"}</span>
           </div>
+          {(() => {
+            const occ = getShamsiHoliday(selected.jm, selected.jd, selected.jy)
+              || getGregorianHoliday(selG.gm, selG.gd);
+            if (!occ) return null;
+            const st = categoryStyle(occ.category, occ.isHoliday);
+            return (
+              <div className={`mt-2 pt-2 border-t border-white/10 flex items-center justify-center gap-1.5 ${st.text}`}>
+                <span className="text-[11px]">{occ.emoji || (occ.isHoliday ? "🔴" : "🟡")}</span>
+                <span className="text-[11px] font-semibold">{locale === "fa" ? occ.faName : occ.enName}</span>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Actions */}

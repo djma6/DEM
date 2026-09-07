@@ -49,6 +49,7 @@ import {
 } from "@/lib/sync";
 import ShareBankModal, { type ShareKind } from "./ShareBankModal";
 import AdSlider from "./AdSlider";
+import AboutModal from "./AboutModal";
 import {
   loadProfile,
   saveProfile,
@@ -170,6 +171,7 @@ export default function DJApp() {
   const [showCalendarTip, setShowCalendarTip] = useState(false);
   const [leadDays, setLeadDaysState] = useState<LeadDays>(1);
   const [showExitConfirm, setShowExitConfirm] = useState(false);
+  const [showAbout, setShowAbout] = useState(false);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressFired = useRef(false);
 
@@ -328,10 +330,11 @@ export default function DJApp() {
       showLogoutConfirm || showMonthPicker || showQRModal || showShareCard ||
       showCardQR || showBankCardModal || showReminderModal || showDatePicker ||
       showReminderDatePicker || showProfileModal || showCalendarTip ||
-      showExitConfirm || !!shareKind || !!selectedDate;
+      showExitConfirm || showAbout || !!shareKind || !!selectedDate;
 
     const closeTopOverlay = () => {
       if (showExitConfirm) { setShowExitConfirm(false); return; }
+      if (showAbout) { setShowAbout(false); return; }
       if (showDatePicker) { setShowDatePicker(false); return; }
       if (showReminderDatePicker) { setShowReminderDatePicker(false); return; }
       if (showCardQR) { setShowCardQR(false); return; }
@@ -373,7 +376,7 @@ export default function DJApp() {
     showEventModal, showDetailModal, showDeleteConfirm, showResetConfirm,
     showLogoutConfirm, showMonthPicker, showQRModal, showShareCard, showCardQR,
     showBankCardModal, showReminderModal, showDatePicker, showReminderDatePicker,
-    showProfileModal, showCalendarTip, showExitConfirm,
+    showProfileModal, showCalendarTip, showExitConfirm, showAbout,
   ]);
 
   // Show the calendar long-press tip the first time the tab is opened.
@@ -1429,6 +1432,12 @@ export default function DJApp() {
               )}
             </div>
 
+            {/* About iGig */}
+            <GlassButton onClick={() => setShowAbout(true)} className="w-full !bg-gradient-to-r !from-purple-600/20 !to-pink-600/20 !border-purple-400/30">
+              <Info size={16} className="inline ml-2 text-purple-300" />
+              <span className="text-purple-100 font-semibold">{t.aboutIGig}</span>
+            </GlassButton>
+
             {/* Logout */}
             <GlassButton onClick={() => setShowLogoutConfirm(true)} variant="danger" className="w-full !bg-red-600/25 !border-red-500/40">
               <LogOut size={16} className="inline ml-2" />{t.logout}
@@ -1457,6 +1466,9 @@ export default function DJApp() {
           </div>
         </div>
       </div>)}
+
+      {/* About iGig */}
+      {showAbout && <AboutModal locale={locale} onClose={() => setShowAbout(false)} />}
 
       {/* Exit confirmation (2nd back press on dashboard) */}
       {showExitConfirm && (
@@ -1854,7 +1866,7 @@ export default function DJApp() {
       </div>)}
 
       {/* FAB */}
-      {!showEventModal && !showDetailModal && !showDeleteConfirm && !showResetConfirm && !showLogoutConfirm && !selectedDate && !showQRModal && !showMonthPicker && !showReminderModal && !showBankCardModal && !showShareCard && !showCardQR && !showDatePicker && !showReminderDatePicker && !shareKind && !showProfileModal && !showCalendarTip && !showExitConfirm && activeTab !== "settings" && (
+      {!showEventModal && !showDetailModal && !showDeleteConfirm && !showResetConfirm && !showLogoutConfirm && !selectedDate && !showQRModal && !showMonthPicker && !showReminderModal && !showBankCardModal && !showShareCard && !showCardQR && !showDatePicker && !showReminderDatePicker && !shareKind && !showProfileModal && !showCalendarTip && !showExitConfirm && !showAbout && activeTab !== "settings" && (
         <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-30"><GlassButton onClick={() => openNewEventForm()} variant="primary" size="lg" className="shadow-2xl shadow-purple-500/50"><Plus size={22} className="inline ml-2" />{t.newEvent}</GlassButton></div>
       )}
 
@@ -1893,8 +1905,8 @@ function DashboardClock({ locale, t }: { locale: Locale; t: (typeof translations
   // Progress through the current day/night span, used to arc the sun/moon.
   const spanStart = isDay ? 6 : (h >= 18 ? 18 : -6);
   const progress = Math.min(1, Math.max(0, (h + now.getMinutes() / 60 - spanStart) / 12));
-  const arcX = 8 + progress * 84;              // 8% → 92% across the badge
-  const arcY = 52 - Math.sin(progress * Math.PI) * 34; // gentle rise and fall
+  const arcX = 18 + progress * 64;                     // travels across the indicator
+  const arcY = 62 - Math.sin(progress * Math.PI) * 30; // rises and sets in an arc
 
   const skyClass = isDay
     ? "from-sky-500/25 via-amber-400/12 to-orange-400/15"
@@ -1904,23 +1916,18 @@ function DashboardClock({ locale, t }: { locale: Locale; t: (typeof translations
     <section className="mt-4">
       <div className={`relative overflow-hidden bg-gradient-to-br ${skyClass} backdrop-blur-xl border border-purple-500/20 rounded-3xl p-5 text-center transition-all duration-1000`}>
 
-        {/* ── Animated day / night badge (top-left) ── */}
+        {/* ── Animated day / night indicator (top-right, no frame) ── */}
         <div
-          className={`absolute top-3 left-3 w-24 h-14 rounded-2xl overflow-hidden border transition-all duration-1000 ${
-            isDay
-              ? "bg-gradient-to-b from-sky-400/35 to-amber-300/20 border-amber-300/40"
-              : "bg-gradient-to-b from-indigo-950/80 to-slate-900/70 border-indigo-400/30"
-          }`}
+          className="absolute top-2 right-3 w-16 h-16 pointer-events-none"
           title={isDay ? (locale === "fa" ? "روز" : "Day") : (locale === "fa" ? "شب" : "Night")}
         >
           {/* Stars — night only */}
           <div className={`absolute inset-0 transition-opacity duration-1000 ${isDay ? "opacity-0" : "opacity-100"}`}>
             {[
-              { l: "16%", tp: "26%", d: "0s", s: 1.5 },
-              { l: "34%", tp: "56%", d: "0.6s", s: 1 },
-              { l: "58%", tp: "22%", d: "1.2s", s: 1.5 },
-              { l: "74%", tp: "62%", d: "0.3s", s: 1 },
-              { l: "88%", tp: "36%", d: "0.9s", s: 1 },
+              { l: "8%", tp: "62%", d: "0s", s: 1.5 },
+              { l: "26%", tp: "18%", d: "0.7s", s: 1 },
+              { l: "70%", tp: "72%", d: "1.3s", s: 1 },
+              { l: "88%", tp: "30%", d: "0.4s", s: 1.5 },
             ].map((st, i) => (
               <span
                 key={i}
@@ -1946,11 +1953,18 @@ function DashboardClock({ locale, t }: { locale: Locale; t: (typeof translations
               transform: "translate(-50%, -50%)",
               opacity: isDay ? 1 : 0,
               scale: isDay ? "1" : "0.4",
+              animation: isDay ? "igig-float 4s ease-in-out infinite" : undefined,
             }}
           >
             <div className="relative">
-              <div className="absolute inset-0 rounded-full bg-amber-300/50 blur-md scale-[2.2] animate-pulse" style={{ animationDuration: "3s" }} />
-              <div className="relative w-5 h-5 rounded-full bg-gradient-to-br from-yellow-200 via-amber-300 to-orange-400 shadow-lg shadow-amber-400/50" />
+              <div
+                className="absolute inset-0 rounded-full bg-amber-300/45 blur-md scale-[2.4]"
+                style={{ animation: "igig-glow 3s ease-in-out infinite" }}
+              />
+              <div
+                className="relative w-6 h-6 rounded-full bg-gradient-to-br from-yellow-200 via-amber-300 to-orange-400 shadow-lg shadow-amber-400/50"
+                style={{ animation: "igig-spin 18s linear infinite" }}
+              />
             </div>
           </div>
 
@@ -1963,23 +1977,20 @@ function DashboardClock({ locale, t }: { locale: Locale; t: (typeof translations
               transform: "translate(-50%, -50%)",
               opacity: isDay ? 0 : 1,
               scale: isDay ? "0.4" : "1",
+              animation: !isDay ? "igig-float 5s ease-in-out infinite" : undefined,
             }}
           >
             <div className="relative">
-              <div className="absolute inset-0 rounded-full bg-indigo-200/35 blur-md scale-[2] animate-pulse" style={{ animationDuration: "4s" }} />
-              <div className="relative w-4 h-4 rounded-full bg-gradient-to-br from-slate-100 to-slate-300 shadow-lg shadow-indigo-300/40">
+              <div
+                className="absolute inset-0 rounded-full bg-indigo-200/30 blur-md scale-[2.2]"
+                style={{ animation: "igig-glow 4s ease-in-out infinite" }}
+              />
+              <div className="relative w-5 h-5 rounded-full bg-gradient-to-br from-slate-100 to-slate-300 shadow-lg shadow-indigo-300/40">
                 {/* Crescent shadow */}
-                <div className={`absolute -top-0.5 -right-1 w-4 h-4 rounded-full transition-colors duration-1000 ${isDay ? "bg-transparent" : "bg-[#141432]"}`} />
+                <div className={`absolute -top-1 -right-1.5 w-5 h-5 rounded-full transition-colors duration-1000 ${isDay ? "bg-transparent" : "bg-[#141432]"}`} />
               </div>
             </div>
           </div>
-
-          {/* Horizon glow */}
-          <div
-            className={`absolute bottom-0 inset-x-0 h-3 transition-all duration-1000 ${
-              isDay ? "bg-gradient-to-t from-amber-300/30 to-transparent" : "bg-gradient-to-t from-purple-500/20 to-transparent"
-            }`}
-          />
         </div>
 
         {/* ── Time ── */}
