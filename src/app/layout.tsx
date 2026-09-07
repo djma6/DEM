@@ -13,6 +13,7 @@ export const metadata: Metadata = {
   },
   other: {
     "mobile-web-app-capable": "yes",
+    "google-site-verification": "yY63Lse06vAwHoYDNnMGTfBctHOy02BuSD5_vUNAJQE",
   },
 };
 
