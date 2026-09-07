@@ -17,6 +17,8 @@ import {
   isGoogleConfigured,
   requestAccessToken,
   fetchGoogleUser,
+  fetchOnlineProfile,
+  saveOnlineProfile,
   uploadBackupToDrive,
   downloadBackupFromDrive,
   type GoogleUser,
@@ -260,12 +262,54 @@ export default function DJApp() {
     setSyncEnabled(!!googleUser);
   }, [googleUser]);
 
-  const handleSetupSubmit = () => {
+  // Auto-save profile edits online when an active Google token is available.
+  useEffect(() => {
+    if (!googleUser || !googleToken || showSetup) return;
+    if (!profile.name.trim() || !profile.phone.trim()) return;
+    const timer = setTimeout(() => {
+      saveOnlineProfile(googleToken, {
+        name: profile.name,
+        phone: profile.phone,
+        instagram: profile.instagram,
+      }).catch((error) => console.error("Profile auto-save failed:", error));
+      saveProfile(profile, googleUser.email);
+    }, 700);
+    return () => clearTimeout(timer);
+  }, [profile, googleUser, googleToken, showSetup]);
+
+  const handleSetupSubmit = async () => {
     // Require name + phone on first-time setup
     if (!profile.name.trim() || !profile.phone.trim()) return;
-    saveProfile(profile, googleUser?.email);
-    setProfileSavedAt(Date.now());
-    setShowSetup(false);
+    setGoogleBusy(true);
+    try {
+      // Gmail users must have their profile confirmed online before setup closes.
+      if (googleUser) {
+        let token = googleToken;
+        if (!token) token = await requestAccessToken();
+        setGoogleToken(token);
+        await saveOnlineProfile(token, {
+          name: profile.name,
+          phone: profile.phone,
+          instagram: profile.instagram,
+        });
+      }
+
+      // Keep a local copy for instant/offline startup.
+      saveProfile(profile, googleUser?.email);
+      setProfileSavedAt(Date.now());
+      setShowSetup(false);
+    } catch (error) {
+      console.error("Profile setup save failed:", error);
+      const message = error instanceof Error ? error.message : "";
+      if (message === "TOKEN_EXPIRED") {
+        setGoogleToken(null);
+        alert(t.tokenExpired);
+      } else {
+        alert(t.profileSaveFailed);
+      }
+    } finally {
+      setGoogleBusy(false);
+    }
   };
 
   const fetchEvents = useCallback(async () => {
@@ -565,15 +609,36 @@ export default function DJApp() {
       setGoogleUser(user);
       localStorage.setItem("djGoogleUser", JSON.stringify(user));
 
-      // If this Gmail already has a saved profile, restore it and skip setup
-      const existing = loadProfile(user.email);
-      if (existing && existing.name && existing.phone) {
-        setProfile(existing);
+      // First try the online profile tied to this verified Google account.
+      const onlineProfile = await fetchOnlineProfile(token);
+      if (onlineProfile?.name && onlineProfile?.phone) {
+        const restored = {
+          name: onlineProfile.name,
+          phone: onlineProfile.phone,
+          email: onlineProfile.email || user.email,
+          instagram: onlineProfile.instagram || "",
+        };
+        setProfile(restored);
+        saveProfile(restored, user.email);
         setShowSetup(false);
         return;
       }
 
-      // Otherwise prefill from Google, keeping anything the user already typed
+      // Migrate any older local per-email profile into the online account.
+      const existing = loadProfile(user.email);
+      if (existing && existing.name && existing.phone) {
+        await saveOnlineProfile(token, {
+          name: existing.name,
+          phone: existing.phone,
+          instagram: existing.instagram,
+        });
+        setProfile(existing);
+        saveProfile(existing, user.email);
+        setShowSetup(false);
+        return;
+      }
+
+      // New Gmail account: prefill Google name/email and ask only once.
       setProfile(p => ({
         ...p,
         name: p.name || user.name || "",

@@ -18,6 +18,46 @@ export interface GoogleUser {
   picture?: string;
 }
 
+export interface GoogleStoredProfile {
+  googleSub: string;
+  email: string;
+  name: string;
+  phone: string;
+  instagram: string | null;
+  picture: string | null;
+}
+
+export async function fetchOnlineProfile(
+  accessToken: string
+): Promise<GoogleStoredProfile | null> {
+  const response = await fetch("/api/profile", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    cache: "no-store",
+  });
+  if (response.status === 401) throw new Error("TOKEN_EXPIRED");
+  if (!response.ok) throw new Error("PROFILE_READ_FAILED");
+  const data = (await response.json()) as { profile?: GoogleStoredProfile | null };
+  return data.profile ?? null;
+}
+
+export async function saveOnlineProfile(
+  accessToken: string,
+  profile: { name: string; phone: string; instagram: string }
+): Promise<GoogleStoredProfile> {
+  const response = await fetch("/api/profile", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(profile),
+  });
+  if (response.status === 401) throw new Error("TOKEN_EXPIRED");
+  if (!response.ok) throw new Error("PROFILE_SAVE_FAILED");
+  const data = (await response.json()) as { profile: GoogleStoredProfile };
+  return data.profile;
+}
+
 export function isGoogleConfigured(): boolean {
   return GOOGLE_CLIENT_ID.length > 0;
 }

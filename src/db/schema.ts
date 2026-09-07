@@ -51,3 +51,14 @@ export const bankCards = pgTable("bank_cards", {
   cardNumber: text("card_number").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
 });
+
+export const userProfiles = pgTable("user_profiles", {
+  googleSub: text("google_sub").primaryKey(),
+  email: text("email").notNull(),
+  name: text("name").notNull(),
+  phone: text("phone").notNull(),
+  instagram: text("instagram"),
+  picture: text("picture"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});

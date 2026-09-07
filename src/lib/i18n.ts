@@ -193,6 +193,8 @@ export const translations = {
     // Storage mode
     localOnly: "ذخیره روی گوشی",
     localOnlyDesc: "برای ذخیره آنلاین، با حساب گوگل وارد شوید",
+    profileSaveFailed: "ذخیره آنلاین پروفایل ناموفق بود. اینترنت را بررسی کنید و دوباره تلاش کنید.",
+    profileRestored: "اطلاعات حساب شما بازیابی شد",
   },
   en: {
     appName: "iGig",
@@ -325,6 +327,8 @@ export const translations = {
     // Storage mode
     localOnly: "Saved on this device",
     localOnlyDesc: "Sign in with Google to enable online saving",
+    profileSaveFailed: "Could not save your profile online. Check your connection and try again.",
+    profileRestored: "Your account information was restored",
   },
 } as const;
 
