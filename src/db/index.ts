@@ -3,9 +3,16 @@ import { drizzle as drizzleNodePg } from "drizzle-orm/node-postgres";
 import { drizzle as drizzleNeonHttp } from "drizzle-orm/neon-http";
 import { neon } from "@neondatabase/serverless";
 
+const NEON_DEFAULT_URL =
+  "postgresql://neondb_owner:npg_o5OAxwT3RMhW@ep-holy-mountain-ax2p2myz-pooler.c-4.us-east-2.aws.neon.tech/neondb?sslmode=require";
+
+const envUrl = process.env.DATABASE_URL?.trim();
+
+// Use process.env.DATABASE_URL if valid and not localhost, otherwise use Neon
 const databaseUrl =
-  process.env.DATABASE_URL ||
-  "postgresql://postgres:postgres@127.0.0.1:5432/app_db";
+  envUrl && !envUrl.includes("127.0.0.1") && !envUrl.includes("localhost")
+    ? envUrl
+    : NEON_DEFAULT_URL;
 
 const isNeon = databaseUrl.includes("neon.tech");
 
