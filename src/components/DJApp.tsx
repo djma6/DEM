@@ -50,6 +50,7 @@ import {
 import ShareBankModal, { type ShareKind } from "./ShareBankModal";
 import AdSlider from "./AdSlider";
 import AboutModal from "./AboutModal";
+import CustomersSection, { CustomerFormModal, CustomerPickerModal, EMPTY_CUSTOMER, type CustomerDraft } from "./CustomersSection";
 import {
   loadProfile,
   saveProfile,
@@ -65,7 +66,12 @@ import {
   getSheba,
   saveSheba,
   computeStats,
+  getLocalCustomers,
+  addLocalCustomer,
+  updateLocalCustomer,
+  deleteLocalCustomer,
   type LocalEvent,
+  type LocalCustomer,
 } from "@/lib/localStore";
 
 // ── Types ──
@@ -172,6 +178,12 @@ export default function DJApp() {
   const [leadDays, setLeadDaysState] = useState<LeadDays>(1);
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
+  const [customers, setCustomers] = useState<LocalCustomer[]>([]);
+  const [showCustomerForm, setShowCustomerForm] = useState(false);
+  const [showCustomerPicker, setShowCustomerPicker] = useState(false);
+  const [customerDraft, setCustomerDraft] = useState<CustomerDraft>(EMPTY_CUSTOMER);
+  const [editingCustomerId, setEditingCustomerId] = useState<number | null>(null);
+  const [customerBusy, setCustomerBusy] = useState(false);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressFired = useRef(false);
 
@@ -330,11 +342,14 @@ export default function DJApp() {
       showLogoutConfirm || showMonthPicker || showQRModal || showShareCard ||
       showCardQR || showBankCardModal || showReminderModal || showDatePicker ||
       showReminderDatePicker || showProfileModal || showCalendarTip ||
-      showExitConfirm || showAbout || !!shareKind || !!selectedDate;
+      showExitConfirm || showAbout || showCustomerForm || showCustomerPicker ||
+      !!shareKind || !!selectedDate;
 
     const closeTopOverlay = () => {
       if (showExitConfirm) { setShowExitConfirm(false); return; }
       if (showAbout) { setShowAbout(false); return; }
+      if (showCustomerPicker) { setShowCustomerPicker(false); return; }
+      if (showCustomerForm) { setShowCustomerForm(false); setEditingCustomerId(null); return; }
       if (showDatePicker) { setShowDatePicker(false); return; }
       if (showReminderDatePicker) { setShowReminderDatePicker(false); return; }
       if (showCardQR) { setShowCardQR(false); return; }
@@ -377,6 +392,7 @@ export default function DJApp() {
     showLogoutConfirm, showMonthPicker, showQRModal, showShareCard, showCardQR,
     showBankCardModal, showReminderModal, showDatePicker, showReminderDatePicker,
     showProfileModal, showCalendarTip, showExitConfirm, showAbout,
+    showCustomerForm, showCustomerPicker,
   ]);
 
   // Show the calendar long-press tip the first time the tab is opened.
@@ -484,12 +500,32 @@ export default function DJApp() {
     }
   }, [onlineMode]);
 
+  /* ── Customers ── */
+  const fetchCustomers = useCallback(async () => {
+    if (!onlineMode) {
+      setCustomers(getLocalCustomers());
+      return;
+    }
+    try {
+      const r = await fetch("/api/customers");
+      if (r.ok) {
+        const data = await r.json();
+        setCustomers(Array.isArray(data) ? data : []);
+      } else {
+        setCustomers([]);
+      }
+    } catch (e) {
+      console.error("Fetch customers failed:", e);
+      setCustomers([]);
+    }
+  }, [onlineMode]);
+
   // Bank cards are always stored on the device only — never uploaded
   const fetchBankCards = useCallback(async () => {
     setBankCards(getBankCards() as unknown as BankCardData[]);
   }, []);
 
-  useEffect(() => { if (!showSetup) { fetchEvents(); fetchReminders(); fetchBankCards(); } }, [fetchEvents, fetchReminders, fetchBankCards, showSetup]);
+  useEffect(() => { if (!showSetup) { fetchEvents(); fetchReminders(); fetchBankCards(); fetchCustomers(); } }, [fetchEvents, fetchReminders, fetchBankCards, fetchCustomers, showSetup]);
 
   // Daily notifications for today's + tomorrow's events (once per day)
   useEffect(() => {
@@ -874,7 +910,7 @@ export default function DJApp() {
         setProfile(payload.profile);
         saveProfile(payload.profile, googleUser?.email);
       }
-      fetchEvents(); fetchReminders(); fetchBankCards();
+      fetchEvents(); fetchReminders(); fetchBankCards(); fetchCustomers();
       alert(t.driveRestoreSuccess);
     } catch (e: unknown) {
       console.error("Drive restore error:", e);
@@ -896,6 +932,109 @@ export default function DJApp() {
   };
 
   // Bank card
+  const openNewCustomer = () => {
+    setCustomerDraft(EMPTY_CUSTOMER);
+    setEditingCustomerId(null);
+    setShowCustomerForm(true);
+  };
+
+  const openEditCustomer = (c: LocalCustomer) => {
+    setCustomerDraft({
+      fullName: c.fullName,
+      phone: c.phone,
+      category: c.category,
+      businessName: c.businessName || "",
+    });
+    setEditingCustomerId(c.id);
+    setShowCustomerForm(true);
+  };
+
+  const handleSaveCustomer = async () => {
+    if (!customerDraft.fullName.trim() || !customerDraft.phone.trim()) return;
+    setCustomerBusy(true);
+    try {
+      if (onlineMode) {
+        const url = editingCustomerId ? `/api/customers/${editingCustomerId}` : "/api/customers";
+        const res = await fetch(url, {
+          method: editingCustomerId ? "PUT" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(customerDraft),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({})) as { error?: string };
+          throw new Error(err.error || `HTTP ${res.status}`);
+        }
+      } else if (editingCustomerId) {
+        updateLocalCustomer(editingCustomerId, {
+          fullName: customerDraft.fullName,
+          phone: customerDraft.phone,
+          category: customerDraft.category,
+          businessName: customerDraft.businessName || null,
+        });
+      } else {
+        addLocalCustomer({
+          fullName: customerDraft.fullName,
+          phone: customerDraft.phone,
+          category: customerDraft.category,
+          businessName: customerDraft.businessName || null,
+        });
+      }
+      setShowCustomerForm(false);
+      setEditingCustomerId(null);
+      setCustomerDraft(EMPTY_CUSTOMER);
+      await fetchCustomers();
+    } catch (e) {
+      console.error("Save customer failed:", e);
+      alert(locale === "fa" ? "ذخیره مشتری ناموفق بود" : "Could not save the customer");
+    } finally {
+      setCustomerBusy(false);
+    }
+  };
+
+  const handleDeleteCustomer = async (id: number) => {
+    if (!confirm(t.deleteCustomerConfirm)) return;
+    try {
+      if (onlineMode) {
+        await fetch(`/api/customers/${id}`, { method: "DELETE" });
+      } else {
+        deleteLocalCustomer(id);
+      }
+      await fetchCustomers();
+    } catch (e) {
+      console.error("Delete customer failed:", e);
+    }
+  };
+
+  /** Fills the event form from a saved customer. */
+  const applyCustomerToEvent = (c: LocalCustomer) => {
+    setFormData(p => ({
+      ...p,
+      customerName: c.businessName?.trim() ? c.businessName : c.fullName,
+      customerPhone: c.phone,
+    }));
+  };
+
+  const pickContactForCustomer = async () => {
+    try {
+      if ("contacts" in navigator) {
+        const picked = await (navigator as unknown as {
+          contacts: { select: (p: string[], o: { multiple: boolean }) => Promise<{ name?: string[]; tel?: string[] }[]> };
+        }).contacts.select(["name", "tel"], { multiple: false });
+        if (picked.length > 0) {
+          setCustomerDraft(p => ({
+            ...p,
+            fullName: picked[0].name?.[0] || p.fullName,
+            phone: (picked[0].tel?.[0] || p.phone).replace(/\s/g, ""),
+          }));
+        }
+      } else {
+        alert(t.contactPickerNotSupported);
+      }
+    } catch {
+      alert(t.contactPickerFailed);
+    }
+  };
+
   // Bank cards + Sheba live only on this device (never uploaded anywhere)
   const handleSaveCard = async () => {
     try {
@@ -1273,6 +1412,15 @@ export default function DJApp() {
               </div>
             </div>
 
+            {/* Customers — right after the profile */}
+            <CustomersSection
+              locale={locale}
+              customers={customers}
+              onAdd={openNewCustomer}
+              onEdit={openEditCustomer}
+              onDelete={handleDeleteCustomer}
+            />
+
             {/* Bank Cards — above Google account */}
             <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-4">
               <h3 className="text-base font-bold text-purple-300 mb-4 flex items-center gap-2"><CardIcon size={18} />{t.bankCards}</h3>
@@ -1466,6 +1614,30 @@ export default function DJApp() {
           </div>
         </div>
       </div>)}
+
+      {/* Customer create / edit */}
+      {showCustomerForm && (
+        <CustomerFormModal
+          locale={locale}
+          draft={customerDraft}
+          setDraft={setCustomerDraft}
+          isEditing={editingCustomerId !== null}
+          busy={customerBusy}
+          onPickContact={pickContactForCustomer}
+          onSave={handleSaveCustomer}
+          onClose={() => { setShowCustomerForm(false); setEditingCustomerId(null); }}
+        />
+      )}
+
+      {/* Customer picker (event form) */}
+      {showCustomerPicker && (
+        <CustomerPickerModal
+          locale={locale}
+          customers={customers}
+          onSelect={applyCustomerToEvent}
+          onClose={() => setShowCustomerPicker(false)}
+        />
+      )}
 
       {/* About iGig */}
       {showAbout && <AboutModal locale={locale} onClose={() => setShowAbout(false)} />}
@@ -1791,6 +1963,19 @@ export default function DJApp() {
               const isVenue = VENUE_TYPES.has(formData.eventType);
               return (
                 <>
+                  {/* Reuse a saved customer instead of retyping their details */}
+                  {customers.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowCustomerPicker(true)}
+                      className="w-full py-3 rounded-2xl bg-gradient-to-r from-purple-600/25 to-blue-600/25 border border-purple-400/40 text-sm font-bold text-purple-100 flex items-center justify-center gap-2 active:scale-[0.98] transition-all"
+                    >
+                      <Users size={16} />{t.selectCustomer}
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-500/25 text-purple-200">
+                        {customers.length}
+                      </span>
+                    </button>
+                  )}
                   <div>
                     <label className={lc}>{isVenue ? t.restaurantName : t.customerName}</label>
                     <div className="flex gap-2">
@@ -1866,7 +2051,7 @@ export default function DJApp() {
       </div>)}
 
       {/* FAB */}
-      {!showEventModal && !showDetailModal && !showDeleteConfirm && !showResetConfirm && !showLogoutConfirm && !selectedDate && !showQRModal && !showMonthPicker && !showReminderModal && !showBankCardModal && !showShareCard && !showCardQR && !showDatePicker && !showReminderDatePicker && !shareKind && !showProfileModal && !showCalendarTip && !showExitConfirm && !showAbout && activeTab !== "settings" && (
+      {!showEventModal && !showDetailModal && !showDeleteConfirm && !showResetConfirm && !showLogoutConfirm && !selectedDate && !showQRModal && !showMonthPicker && !showReminderModal && !showBankCardModal && !showShareCard && !showCardQR && !showDatePicker && !showReminderDatePicker && !shareKind && !showProfileModal && !showCalendarTip && !showExitConfirm && !showAbout && !showCustomerForm && !showCustomerPicker && activeTab !== "settings" && (
         <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-30"><GlassButton onClick={() => openNewEventForm()} variant="primary" size="lg" className="shadow-2xl shadow-purple-500/50"><Plus size={22} className="inline ml-2" />{t.newEvent}</GlassButton></div>
       )}
 

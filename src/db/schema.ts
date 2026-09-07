@@ -62,3 +62,16 @@ export const userProfiles = pgTable("user_profiles", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
+
+export const customers = pgTable("customers", {
+  id: serial("id").primaryKey(),
+  fullName: text("full_name").notNull(),
+  phone: text("phone").notNull(),
+  /** ceremony | restaurant | club | dj | other */
+  category: text("category").notNull().default("other"),
+  /** Name of the venue/company for the chosen category */
+  businessName: text("business_name"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});

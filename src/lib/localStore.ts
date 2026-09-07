@@ -46,6 +46,17 @@ export interface LocalBankCard {
   sheba?: string;
 }
 
+export type CustomerCategory = "ceremony" | "restaurant" | "club" | "dj" | "other";
+
+export interface LocalCustomer {
+  id: number;
+  fullName: string;
+  phone: string;
+  category: CustomerCategory;
+  businessName?: string | null;
+  notes?: string | null;
+}
+
 export interface StoredProfile {
   name: string;
   phone: string;
@@ -57,6 +68,7 @@ const EVENTS_KEY = "djLocalEvents";
 const REMINDERS_KEY = "djLocalReminders";
 const CARDS_KEY = "djBankCards";
 const SHEBA_KEY = "djSheba";
+const CUSTOMERS_KEY = "djLocalCustomers";
 const SEQ_KEY = "djLocalSeq";
 const LEGACY_PROFILE_KEY = "djProfile";
 
@@ -209,6 +221,35 @@ export function addBankCard(
 
 export function deleteBankCard(id: number): void {
   write(CARDS_KEY, getBankCards().filter((c) => c.id !== id));
+}
+
+/* ── Customers (local mirror when signed out) ── */
+
+export function getLocalCustomers(): LocalCustomer[] {
+  return read<LocalCustomer>(CUSTOMERS_KEY);
+}
+
+export function addLocalCustomer(data: Omit<LocalCustomer, "id">): LocalCustomer {
+  const list = getLocalCustomers();
+  const created: LocalCustomer = { ...data, id: nextId() };
+  list.push(created);
+  write(CUSTOMERS_KEY, list);
+  return created;
+}
+
+export function updateLocalCustomer(
+  id: number,
+  data: Partial<Omit<LocalCustomer, "id">>
+): void {
+  const list = getLocalCustomers();
+  const idx = list.findIndex((c) => c.id === id);
+  if (idx === -1) return;
+  list[idx] = { ...list[idx], ...data, id };
+  write(CUSTOMERS_KEY, list);
+}
+
+export function deleteLocalCustomer(id: number): void {
+  write(CUSTOMERS_KEY, getLocalCustomers().filter((c) => c.id !== id));
 }
 
 /* ── Sheba / IBAN (always local) ── */
