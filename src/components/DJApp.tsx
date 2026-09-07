@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { translations, type Locale } from "@/lib/i18n";
 import { toJalaali, toGregorian, jalaaliMonthLength, formatJalaaliDate, formatGregorianDate, todayJalaali } from "@/lib/jalaali";
-import { getShamsiHoliday, getGregorianHoliday, type Holiday, type GregorianHoliday } from "@/lib/holidays";
+import { getShamsiHoliday, getGregorianHoliday, categoryStyle, type Holiday, type GregorianHoliday, type HolidayCategory } from "@/lib/holidays";
 import QRCode from "qrcode";
 
 import {
@@ -45,6 +45,7 @@ import {
   type SyncState,
 } from "@/lib/sync";
 import ShareBankModal, { type ShareKind } from "./ShareBankModal";
+import AdSlider from "./AdSlider";
 import {
   loadProfile,
   saveProfile,
@@ -465,7 +466,7 @@ export default function DJApp() {
     const days: CalendarDay[] = [];
     const evList = Array.isArray(events) ? events : [];
     for (let d = 1; d <= ml; d++) { const ds = formatJalaaliDate(year, month, d); const g = toGregorian(year, month, d);
-      days.push({ day: d, isToday: ds === todayStr, hasEvents: evList.some(e => e.shamsiDate === ds), holiday: getShamsiHoliday(month, d), gregorianHoliday: getGregorianHoliday(g.gm, g.gd), jy: year, jm: month, jd: d, gy: g.gy, gm: g.gm, gd: g.gd }); }
+      days.push({ day: d, isToday: ds === todayStr, hasEvents: evList.some(e => e.shamsiDate === ds), holiday: getShamsiHoliday(month, d, year), gregorianHoliday: getGregorianHoliday(g.gm, g.gd), jy: year, jm: month, jd: d, gy: g.gy, gm: g.gm, gd: g.gd }); }
     return { days, startDayOfWeek: sd };
   };
   const getGregorianCalendarDays = (): { days: CalendarDay[]; startDayOfWeek: number } => {
@@ -474,7 +475,7 @@ export default function DJApp() {
     const days: CalendarDay[] = [];
     const evList = Array.isArray(events) ? events : [];
     for (let d = 1; d <= ml; d++) { const gs = formatGregorianDate(year, month, d); let j; try { j = toJalaali(year, month, d); } catch { continue; }
-      days.push({ day: d, isToday: gs === todayGStr, hasEvents: evList.some(e => e.gregorianDate === gs), holiday: getShamsiHoliday(j.jm, j.jd), gregorianHoliday: getGregorianHoliday(month, d), jy: j.jy, jm: j.jm, jd: j.jd, gy: year, gm: month, gd: d }); }
+      days.push({ day: d, isToday: gs === todayGStr, hasEvents: evList.some(e => e.gregorianDate === gs), holiday: getShamsiHoliday(j.jm, j.jd, j.jy), gregorianHoliday: getGregorianHoliday(month, d), jy: j.jy, jm: j.jm, jd: j.jd, gy: year, gm: month, gd: d }); }
     return { days, startDayOfWeek: sd };
   };
   const prevMonth = () => { if (calendarType === "shamsi") setShamsiMonth(p => { let y = p.year, m = p.month - 1; if (m < 1) { m = 12; y--; } return { year: y, month: m }; }); else setGregMonth(p => { let y = p.year, m = p.month - 1; if (m < 1) { m = 12; y--; } return { year: y, month: m }; }); };
@@ -837,7 +838,22 @@ export default function DJApp() {
   const ic = "w-full bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-purple-400/50 focus:ring-1 focus:ring-purple-400/30 transition-all";
   const lc = "block text-sm font-medium text-gray-300 mb-1.5";
   const sc = "w-full bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl px-4 py-3 text-white focus:outline-none focus:border-purple-400/50 focus:ring-1 focus:ring-purple-400/30 transition-all appearance-none";
-  const getDayHoliday = (di: CalendarDay) => { if (calendarType === "shamsi" && di.holiday) return { name: locale === "fa" ? di.holiday.faName : di.holiday.enName, isHoliday: di.holiday.isHoliday }; if (calendarType === "gregorian" && di.gregorianHoliday) return { name: locale === "fa" ? di.gregorianHoliday.faName : di.gregorianHoliday.enName, isHoliday: di.gregorianHoliday.isHoliday }; if (calendarType === "shamsi" && di.gregorianHoliday?.isHoliday) return { name: locale === "fa" ? di.gregorianHoliday.faName : di.gregorianHoliday.enName, isHoliday: true }; if (calendarType === "gregorian" && di.holiday?.isHoliday) return { name: locale === "fa" ? di.holiday.faName : di.holiday.enName, isHoliday: true }; return null; };
+  const getDayHoliday = (di: CalendarDay): { name: string; isHoliday: boolean; category: HolidayCategory; emoji?: string } | null => {
+    const shamsi = di.holiday;
+    const greg = di.gregorianHoliday;
+    // Prefer the calendar the user is currently viewing, then fall back to the
+    // other calendar when that day is an official holiday there.
+    const primary = calendarType === "shamsi" ? shamsi : greg;
+    const secondary = calendarType === "shamsi" ? greg : shamsi;
+    const picked = primary ?? (secondary?.isHoliday ? secondary : secondary ?? null);
+    if (!picked) return null;
+    return {
+      name: locale === "fa" ? picked.faName : picked.enName,
+      isHoliday: picked.isHoliday,
+      category: picked.category,
+      emoji: picked.emoji,
+    };
+  };
 
   // ── Install gate (mobile only) ──
   if (needsInstall === null) {
@@ -996,17 +1012,19 @@ export default function DJApp() {
             {(() => {
               const n = new Date();
               const jt = toJalaali(n.getFullYear(), n.getMonth() + 1, n.getDate());
-              const sh = getShamsiHoliday(jt.jm, jt.jd);
+              const sh = getShamsiHoliday(jt.jm, jt.jd, jt.jy);
               const gh = getGregorianHoliday(n.getMonth() + 1, n.getDate());
               const todayHoliday = sh || gh;
               if (!todayHoliday) return null;
-              const name = locale === "fa" ? (sh ? sh.faName : gh!.faName) : (sh ? sh.enName : gh!.enName);
-              const isH = todayHoliday.isHoliday;
+              const name = locale === "fa" ? todayHoliday.faName : todayHoliday.enName;
+              const style = categoryStyle(todayHoliday.category);
               return (
-                <div className={`mt-3 rounded-2xl p-3 flex items-center gap-2 ${isH ? "bg-red-500/10 border border-red-500/20" : "bg-amber-500/10 border border-amber-500/20"}`}>
-                  <span className="text-base">{isH ? "🔴" : "🟡"}</span>
-                  <span className={`text-sm font-semibold ${isH ? "text-red-300" : "text-amber-300"}`}>{name}</span>
-                  <span className={`text-[9px] px-2 py-0.5 rounded-full ${isH ? "bg-red-500/20 text-red-400" : "bg-amber-500/20 text-amber-400"}`}>{isH ? t.holiday : t.occasion}</span>
+                <div className={`mt-3 rounded-2xl p-3 flex items-center gap-2 border ${style.chip}`}>
+                  <span className="text-base">{todayHoliday.emoji || (todayHoliday.isHoliday ? "🔴" : "🟡")}</span>
+                  <span className="text-sm font-semibold flex-1">{name}</span>
+                  <span className={`text-[9px] px-2 py-0.5 rounded-full border ${style.chip}`}>
+                    {todayHoliday.isHoliday ? t.holiday : t.occasion}
+                  </span>
                 </div>
               );
             })()}
@@ -1032,6 +1050,9 @@ export default function DJApp() {
                 <span className="text-blue-200">{t.sendSheba}</span>
               </GlassButton>
             </section>
+            {/* Advertising slider */}
+            <AdSlider locale={locale} />
+
             {/* Upcoming Events Box */}
             <section className="mt-4">
               <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl overflow-hidden">
@@ -1057,9 +1078,11 @@ export default function DJApp() {
         {activeTab === "calendar" && (<section className="mt-4">
             <div className="flex items-center justify-between mb-3"><div className="flex items-center gap-2"><GlassButton onClick={() => switchCalendarType(calendarType === "shamsi" ? "gregorian" : "shamsi")} size="sm"><Calendar size={12} className="inline" /> {calendarType === "shamsi" ? t.shamsiDate : t.gregorianDate}</GlassButton><GlassButton onClick={goToToday} size="sm" variant="primary">{t.today}</GlassButton></div></div>
             <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-4 text-[10px]">
-                <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-red-500" /><span className="text-red-300">{t.holiday}</span></div>
-                <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-amber-500" /><span className="text-gray-400">{t.occasion}</span></div>
+              <div className="flex items-center gap-2.5 text-[9px] flex-wrap">
+                <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-red-500" /><span className="text-red-300">{t.catMartyrdom}</span></div>
+                <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-pink-400" /><span className="text-pink-300">{t.catBirth}</span></div>
+                <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-emerald-400" /><span className="text-emerald-300">{t.catNowruz}</span></div>
+                <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-amber-500" /><span className="text-amber-300">{t.occasion}</span></div>
                 <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-purple-400" /><span className="text-gray-400">{locale === "fa" ? "ایونت" : "Event"}</span></div>
               </div>
               <button onClick={() => setShowCalendarTip(true)} title={t.calendarTipTitle} className="w-7 h-7 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-purple-300 hover:bg-white/10 transition-all flex-shrink-0">
@@ -1074,13 +1097,15 @@ export default function DJApp() {
               {Array.from({ length: calData.startDayOfWeek }).map((_, i) => <div key={`e${i}`} className="aspect-square" />)}
               {calData.days.map(di => {
                 const dh = getDayHoliday(di);
-                const isH = dh?.isHoliday;
-                const isO = dh && !dh.isHoliday;
+                const style = dh ? categoryStyle(dh.category) : null;
                 let dc = "text-gray-400";
-                if (di.isToday) dc = "!bg-gradient-to-br !from-purple-600 !to-red-600 !border-purple-400/50 text-white font-bold shadow-lg shadow-purple-500/30";
-                else if (isH) dc = "!bg-red-500/25 !border-red-500/60 !text-red-300 font-bold";
-                else if (isO) dc = "!bg-amber-500/10 !border-amber-400/30 text-amber-200";
-                else if (di.hasEvents) dc = "!border-purple-500/40 text-purple-200";
+                if (di.isToday) {
+                  dc = "!bg-gradient-to-br !from-purple-600 !to-red-600 !border-purple-400/50 text-white font-bold shadow-lg shadow-purple-500/30";
+                } else if (style) {
+                  dc = style.cell;
+                } else if (di.hasEvents) {
+                  dc = "!border-purple-500/40 text-purple-200";
+                }
                 return (
                   <div key={di.day} className="relative">
                     <GlassButton
@@ -1094,16 +1119,21 @@ export default function DJApp() {
                       onTouchCancel={cancelLongPress}
                       onTouchMove={cancelLongPress}
                     >
-                      <span className={`text-[11px] leading-none ${isH && !di.isToday ? "text-red-300 font-bold" : ""}`}>{di.day}</span>
+                      {dh?.emoji && !di.isToday && (
+                        <span className="absolute top-0 left-0.5 text-[8px] leading-none">{dh.emoji}</span>
+                      )}
+                      <span className="text-[11px] leading-none">{di.day}</span>
                       {calendarType === "shamsi" && <span className="text-[7px] leading-none text-gray-500 mt-0.5" dir="ltr">{di.gd}</span>}
                       {calendarType === "gregorian" && <span className="text-[7px] leading-none text-gray-500 mt-0.5" dir="ltr">{di.jd}</span>}
                       {di.hasEvents && !di.isToday && <div className="absolute bottom-0.5 w-1 h-1 rounded-full bg-purple-400" />}
-                      {isH && !di.isToday && <div className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-red-500" />}
-                      {isO && !di.isToday && !isH && <div className="absolute top-0.5 right-0.5 w-1 h-1 rounded-full bg-amber-500" />}
+                      {style && !di.isToday && (
+                        <div className={`absolute top-0.5 right-0.5 rounded-full ${dh?.isHoliday ? "w-1.5 h-1.5" : "w-1 h-1"} ${style.dot}`} />
+                      )}
                     </GlassButton>
                     {holidayTooltip && dh && holidayTooltip.name === dh.name && (
                       <div className="absolute z-50 bottom-full mb-1 left-1/2 -translate-x-1/2 whitespace-nowrap bg-[#1a1a2e] border border-white/20 rounded-lg px-2 py-1 text-[9px] shadow-xl">
-                        <span className={dh.isHoliday ? "text-red-400" : "text-amber-400"}>{dh.isHoliday ? "🔴 " : "🟡 "}</span>{dh.name}
+                        {dh.emoji && <span className="ml-1">{dh.emoji}</span>}
+                        <span className={categoryStyle(dh.category).text}>{dh.name}</span>
                       </div>
                     )}
                   </div>
@@ -1495,6 +1525,30 @@ export default function DJApp() {
       {selectedDate && !showDetailModal && (<div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end justify-center" onClick={() => setSelectedDate(null)}>
         <div className="w-full max-w-lg bg-[#1a1a2e]/90 backdrop-blur-xl rounded-t-3xl border-t border-white/10 p-5 max-h-[70vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
           <div className="flex items-center justify-between mb-4"><h3 className="text-lg font-bold text-purple-300">{t.eventsOn} {selectedDate}</h3><GlassButton onClick={() => setSelectedDate(null)} size="sm"><X size={16} /></GlassButton></div>
+          {/* Holiday / occasion for this date */}
+          {(() => {
+            if (!selectedDate) return null;
+            let occasion: Holiday | GregorianHoliday | null = null;
+            if (selectedDate.includes("/")) {
+              const [jy, jm, jd] = selectedDate.split("/").map(Number);
+              occasion = getShamsiHoliday(jm, jd, jy);
+            } else {
+              const [, gm, gd] = selectedDate.split("-").map(Number);
+              occasion = getGregorianHoliday(gm, gd);
+            }
+            if (!occasion) return null;
+            const style = categoryStyle(occasion.category);
+            return (
+              <div className={`mb-3 rounded-xl p-3 flex items-center gap-2 border ${style.chip}`}>
+                <span className="text-base">{occasion.emoji || (occasion.isHoliday ? "🔴" : "🟡")}</span>
+                <span className="text-sm font-semibold flex-1">{locale === "fa" ? occasion.faName : occasion.enName}</span>
+                <span className={`text-[9px] px-2 py-0.5 rounded-full border ${style.chip}`}>
+                  {occasion.isHoliday ? t.holiday : t.occasion}
+                </span>
+              </div>
+            );
+          })()}
+
           {/* Reminders for this date */}
           {selectedDateReminders.length > 0 && (<div className="mb-3"><h4 className="text-xs font-semibold text-amber-300 mb-2 flex items-center gap-1"><Bell size={12} />{t.reminder}</h4><div className="space-y-1">{selectedDateReminders.map(r => (<div key={r.id} className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 flex items-center gap-2"><Bell size={12} className="text-amber-400 flex-shrink-0" /><div className="flex-1 min-w-0"><p className="text-xs font-medium text-amber-200">{r.title}</p>{r.time && <p className="text-[10px] text-gray-400">{r.time}</p>}{r.contactName && <p className="text-[10px] text-gray-400">{r.contactName} · {r.contactPhone}</p>}</div><GlassButton onClick={() => handleDeleteReminder(r.id)} size="sm" variant="danger" className="!px-2 !py-1"><Trash2 size={10} /></GlassButton></div>))}</div></div>)}
           {/* Events */}
