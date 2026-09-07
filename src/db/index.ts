@@ -1,31 +1,35 @@
-import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
+import { drizzle as drizzleNodePg } from "drizzle-orm/node-postgres";
+import { drizzle as drizzleNeonHttp } from "drizzle-orm/neon-http";
+import { neon } from "@neondatabase/serverless";
 
-const databaseUrl = process.env.DATABASE_URL || "postgresql://postgres:postgres@127.0.0.1:5432/app_db";
+const databaseUrl =
+  process.env.DATABASE_URL ||
+  "postgresql://postgres:postgres@127.0.0.1:5432/app_db";
 
-const needsSsl =
-  databaseUrl.includes("neon.tech") ||
-  databaseUrl.includes("supabase") ||
-  databaseUrl.includes("sslmode=require") ||
-  databaseUrl.includes("amazonaws.com") ||
-  !databaseUrl.includes("127.0.0.1");
+const isNeon = databaseUrl.includes("neon.tech");
 
-const globalForDb = globalThis as typeof globalThis & {
-  __arenaNextJsPostgresqlPool?: Pool;
-};
+function createDb() {
+  if (isNeon) {
+    const client = neon(databaseUrl);
+    return drizzleNeonHttp(client);
+  }
 
-export const pool =
-  globalForDb.__arenaNextJsPostgresqlPool ??
-  new Pool({
-    connectionString: databaseUrl,
-    ssl: needsSsl ? { rejectUnauthorized: false } : undefined,
-    max: 10,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 10000,
-  });
+  const globalForDb = globalThis as typeof globalThis & {
+    __arenaNextJsPostgresqlPool?: Pool;
+  };
 
-if (process.env.NODE_ENV !== "production") {
-  globalForDb.__arenaNextJsPostgresqlPool = pool;
+  const pool =
+    globalForDb.__arenaNextJsPostgresqlPool ??
+    new Pool({
+      connectionString: databaseUrl,
+    });
+
+  if (process.env.NODE_ENV !== "production") {
+    globalForDb.__arenaNextJsPostgresqlPool = pool;
+  }
+
+  return drizzleNodePg(pool);
 }
 
-export const db = drizzle(pool);
+export const db = createDb();
