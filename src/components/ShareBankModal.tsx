@@ -60,8 +60,13 @@ export default function ShareBankModal({
   const [contactName, setContactName] = useState("");
 
   const activeCard = cards[cardIndex];
-  const value = kind === "card" ? activeCard?.cardNumber || "" : sheba;
-  const title = kind === "card" ? activeCard?.title : undefined;
+  // For IBAN we prefer the Sheba attached to the selected card,
+  // falling back to the standalone one saved in Settings.
+  const value =
+    kind === "card"
+      ? activeCard?.cardNumber || ""
+      : activeCard?.sheba || sheba || "";
+  const title = activeCard?.title;
   const message = buildShareMessage(locale, djName, kind, value, title);
   const canSend = value.trim().length > 0 && phone.trim().length > 0;
 
@@ -137,7 +142,7 @@ export default function ShareBankModal({
         ) : (
           <>
             {/* Card selector when several cards exist */}
-            {kind === "card" && cards.length > 1 && (
+            {cards.length > 1 && (
               <div className="mb-3">
                 <label className="block text-xs font-medium text-gray-300 mb-1.5">
                   {t.cardTitle}
@@ -155,7 +160,7 @@ export default function ShareBankModal({
                     >
                       <span className="text-xs font-medium">{c.title}</span>
                       <span className="block text-[10px] opacity-70 font-mono" dir="ltr">
-                        {formatCard(c.cardNumber)}
+                        {kind === "card" ? formatCard(c.cardNumber) : c.sheba || "—"}
                       </span>
                     </button>
                   ))}

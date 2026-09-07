@@ -7,6 +7,7 @@ import {
   Globe, Speaker, Lightbulb, PartyPopper, LayoutDashboard, List, Settings,
   Download, Upload, RefreshCw, User, CheckCircle, Copy, QrCode, Contact,
   Bell, Share2, Mail, CreditCard as CardIcon, LogOut, Landmark, Smartphone,
+  ChevronUp, ChevronDown, Info,
 } from "lucide-react";
 import { translations, type Locale } from "@/lib/i18n";
 import { toJalaali, toGregorian, jalaaliMonthLength, formatJalaaliDate, formatGregorianDate, todayJalaali } from "@/lib/jalaali";
@@ -31,6 +32,7 @@ import {
   notificationPermission,
   requestNotificationPermission,
   runDailyEventNotifications,
+  sendTestNotification,
 } from "@/lib/notifications";
 import {
   initSync,
@@ -65,7 +67,7 @@ import {
 interface EventData { id: number; eventType: string; title: string | null; shamsiDate: string; gregorianDate: string; venue: string | null; location: string | null; fee: number; deposit: number; equipmentNeeded: string | null; soundLightProvider: string | null; soundLightProviderPhone: string | null; soundLightRequirements: string | null; soundLightCost: number; description: string | null; customerName: string | null; customerPhone: string | null; guestCount: number; status: string; createdAt: string | null; updatedAt: string | null; }
 interface Stats { totalEvents: number; unsettledEvents: number; totalRevenue: number; upcomingCount: number; upcomingEvents: EventData[]; }
 interface ReminderData { id: number; title: string; shamsiDate: string; gregorianDate: string; time: string | null; notifyBefore: string | null; contactName: string | null; contactPhone: string | null; description: string | null; completed: number; }
-interface BankCardData { id: number; title: string; cardNumber: string; }
+interface BankCardData { id: number; title: string; cardNumber: string; sheba?: string; }
 interface CalendarDay { day: number; isToday: boolean; hasEvents: boolean; holiday: Holiday | null; gregorianHoliday: GregorianHoliday | null; jy: number; jm: number; jd: number; gy: number; gm: number; gd: number; }
 interface UserProfile { name: string; phone: string; email: string; instagram: string; }
 
@@ -74,11 +76,11 @@ const STATUSES = ["confirmed", "pending", "depositPaid", "settled", "cancelled"]
 const STATUS_COLORS: Record<string, string> = { confirmed: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30", pending: "bg-amber-500/20 text-amber-400 border-amber-500/30", depositPaid: "bg-blue-500/20 text-blue-400 border-blue-500/30", settled: "bg-purple-500/20 text-purple-400 border-purple-500/30", cancelled: "bg-red-500/20 text-red-400 border-red-500/30" };
 const EVENT_TYPE_ICONS: Record<string, React.ReactNode> = { wedding: <PartyPopper size={14} />, birthday: <PartyPopper size={14} />, conference: <Users size={14} />, concert: <Music size={14} />, corporate: <LayoutDashboard size={14} />, festival: <PartyPopper size={14} />, club: <Music size={14} />, private: <Users size={14} />, other: <FileText size={14} /> };
 
-function GlassButton({ children, onClick, variant = "default", size = "md", className = "", disabled = false, onMouseEnter, onMouseLeave }: { children: React.ReactNode; onClick?: () => void; variant?: "default" | "primary" | "danger" | "success"; size?: "sm" | "md" | "lg"; className?: string; disabled?: boolean; onMouseEnter?: () => void; onMouseLeave?: () => void; }) {
+function GlassButton({ children, onClick, variant = "default", size = "md", className = "", disabled = false, onMouseEnter, onMouseLeave, onTouchStart, onTouchEnd, onTouchCancel, onTouchMove }: { children: React.ReactNode; onClick?: () => void; variant?: "default" | "primary" | "danger" | "success"; size?: "sm" | "md" | "lg"; className?: string; disabled?: boolean; onMouseEnter?: () => void; onMouseLeave?: () => void; onTouchStart?: () => void; onTouchEnd?: () => void; onTouchCancel?: () => void; onTouchMove?: () => void; }) {
   const b = "backdrop-blur-xl border transition-all duration-300 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed";
   const v: Record<string, string> = { default: "bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20", primary: "bg-gradient-to-r from-purple-500/20 to-blue-500/20 border-purple-400/30 hover:from-purple-500/30 hover:to-blue-500/30 hover:border-purple-400/50", danger: "bg-red-500/20 border-red-400/30 hover:bg-red-500/30 hover:border-red-400/50", success: "bg-emerald-500/20 border-emerald-400/30 hover:bg-emerald-500/30 hover:border-emerald-400/50" };
   const s: Record<string, string> = { sm: "px-3 py-2 text-xs rounded-xl", md: "px-4 py-3 text-sm rounded-2xl", lg: "px-6 py-4 text-base rounded-2xl" };
-  return <button onClick={onClick} disabled={disabled} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave} className={`${b} ${v[variant]} ${s[size]} ${className}`}>{children}</button>;
+  return <button onClick={onClick} disabled={disabled} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} onTouchCancel={onTouchCancel} onTouchMove={onTouchMove} className={`${b} ${v[variant]} ${s[size]} ${className}`}>{children}</button>;
 }
 
 function formatCardNumber(num: string): string { return num.replace(/(\d{4})/g, "$1-").slice(0, -1); }
@@ -155,6 +157,30 @@ export default function DJApp() {
   const [sheba, setSheba] = useState("");
   const [shebaDraft, setShebaDraft] = useState("");
   const [shareKind, setShareKind] = useState<ShareKind | null>(null);
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showCalendarTip, setShowCalendarTip] = useState(false);
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressFired = useRef(false);
+
+  // Long-press a calendar day to reveal its holiday/occasion name on mobile
+  const startLongPress = (dh: { name: string; isHoliday: boolean } | null) => {
+    longPressFired.current = false;
+    if (!dh) return;
+    if (longPressTimer.current) clearTimeout(longPressTimer.current);
+    longPressTimer.current = setTimeout(() => {
+      longPressFired.current = true;
+      setHolidayTooltip(dh);
+    }, 400);
+  };
+
+  const cancelLongPress = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+    setTimeout(() => setHolidayTooltip(null), 1800);
+  };
   const [needsInstall, setNeedsInstall] = useState<boolean | null>(null);
   const [notifPerm, setNotifPerm] = useState<NotificationPermission | "unsupported">("default");
   const [googleUser, setGoogleUser] = useState<GoogleUser | null>(null);
@@ -179,7 +205,7 @@ export default function DJApp() {
 
   const [formData, setFormData] = useState({ eventType: "wedding", title: "", shamsiDate: "", gregorianDate: "", venue: "", location: "", fee: 0, deposit: 0, equipmentNeeded: "", soundLightProvider: "", soundLightProviderPhone: "", soundLightRequirements: "", soundLightCost: 0, soundLightEnabled: false, description: "", customerName: "", customerPhone: "", guestCount: 0, status: "pending" });
   const [reminderForm, setReminderForm] = useState({ title: "", shamsiDate: "", gregorianDate: "", time: "", notifyBefore: "0", contactName: "", contactPhone: "", description: "" });
-  const [bankCardForm, setBankCardForm] = useState({ title: "", cardNumber: "" });
+  const [bankCardForm, setBankCardForm] = useState({ title: "", cardNumber: "", sheba: "" });
 
   const t = translations[locale];
   const isRtl = locale === "fa";
@@ -261,6 +287,16 @@ export default function DJApp() {
   useEffect(() => {
     setSyncEnabled(!!googleUser);
   }, [googleUser]);
+
+  // Show the calendar long-press tip the first time the tab is opened.
+  useEffect(() => {
+    if (activeTab !== "calendar") return;
+    try {
+      if (localStorage.getItem("djCalendarTipSeen") === "1") return;
+      localStorage.setItem("djCalendarTipSeen", "1");
+    } catch { /* ignore */ }
+    setShowCalendarTip(true);
+  }, [activeTab]);
 
   // Auto-save profile edits online when an active Google token is available.
   useEffect(() => {
@@ -384,8 +420,13 @@ export default function DJApp() {
   };
 
   const handleTestNotification = async () => {
-    if (notifPerm !== "granted") { await handleEnableNotifications(); return; }
-    await runDailyEventNotifications(events, locale, { force: true });
+    const result = await sendTestNotification(events, locale);
+    setNotifPerm(notificationPermission());
+    if (result === "sent") return;
+    if (result === "denied") { alert(t.notificationsBlocked); return; }
+    if (result === "unsupported") { alert(t.notificationsUnsupported); return; }
+    // Android Chrome needs the PWA installed for service-worker notifications
+    alert(isMobileDevice() && !isStandalone() ? t.notificationNeedsInstall : t.notificationFailed);
   };
 
   const generateQRCode = async (data: string): Promise<string> => {
@@ -767,9 +808,9 @@ export default function DJApp() {
   // Bank cards + Sheba live only on this device (never uploaded anywhere)
   const handleSaveCard = async () => {
     try {
-      addBankCard(bankCardForm.title, bankCardForm.cardNumber);
+      addBankCard(bankCardForm.title, bankCardForm.cardNumber, bankCardForm.sheba);
       setShowBankCardModal(false);
-      setBankCardForm({ title: "", cardNumber: "" });
+      setBankCardForm({ title: "", cardNumber: "", sheba: "" });
       void fetchBankCards();
     } catch (e) { console.error(e); }
   };
@@ -1015,22 +1056,59 @@ export default function DJApp() {
         {/* ═══ CALENDAR ═══ */}
         {activeTab === "calendar" && (<section className="mt-4">
             <div className="flex items-center justify-between mb-3"><div className="flex items-center gap-2"><GlassButton onClick={() => switchCalendarType(calendarType === "shamsi" ? "gregorian" : "shamsi")} size="sm"><Calendar size={12} className="inline" /> {calendarType === "shamsi" ? t.shamsiDate : t.gregorianDate}</GlassButton><GlassButton onClick={goToToday} size="sm" variant="primary">{t.today}</GlassButton></div></div>
-            <div className="flex items-center gap-4 mb-3 text-[10px]"><div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-red-500" /><span className="text-gray-400">{t.holiday}</span></div><div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-amber-500" /><span className="text-gray-400">{t.occasion}</span></div><div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-purple-400" /><span className="text-gray-400">{locale === "fa" ? "ایونت" : "Event"}</span></div></div>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-4 text-[10px]">
+                <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-red-500" /><span className="text-red-300">{t.holiday}</span></div>
+                <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-amber-500" /><span className="text-gray-400">{t.occasion}</span></div>
+                <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-purple-400" /><span className="text-gray-400">{locale === "fa" ? "ایونت" : "Event"}</span></div>
+              </div>
+              <button onClick={() => setShowCalendarTip(true)} title={t.calendarTipTitle} className="w-7 h-7 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-purple-300 hover:bg-white/10 transition-all flex-shrink-0">
+                <Info size={13} />
+              </button>
+            </div>
             <div className="flex items-center justify-between mb-3"><GlassButton onClick={prevMonth} size="sm"><ChevronLeft size={18} /></GlassButton><button onClick={() => setShowMonthPicker(true)} className="text-base font-bold text-purple-300 hover:text-purple-200 transition-colors cursor-pointer active:scale-95">{monthName}</button><GlassButton onClick={nextMonth} size="sm"><ChevronRight size={18} /></GlassButton></div>
             {calendarType === "gregorian" && <p className="text-center text-[10px] text-gray-500 mb-2">{t.shamsiMonths[shamsiMonth.month - 1]} {shamsiMonth.year}</p>}
             {calendarType === "shamsi" && <p className="text-center text-[10px] text-gray-500 mb-2">{t.gregorianMonths[gregMonth.month - 1]} {gregMonth.year}</p>}
             <div className="grid grid-cols-7 gap-1 mb-1">{weekDayLabels.map((d, i) => <div key={i} className="text-center text-[10px] font-medium text-gray-500 py-1">{d}</div>)}</div>
             <div className="grid grid-cols-7 gap-1">
               {Array.from({ length: calData.startDayOfWeek }).map((_, i) => <div key={`e${i}`} className="aspect-square" />)}
-              {calData.days.map(di => { const dh = getDayHoliday(di); const isH = dh?.isHoliday; const isO = dh && !dh.isHoliday; let dc = "text-gray-400"; if (di.isToday) dc = "!bg-gradient-to-br !from-purple-600 !to-red-600 !border-purple-400/50 text-white font-bold shadow-lg shadow-purple-500/30"; else if (isH) dc = "!bg-red-500/15 !border-red-400/40 text-red-300"; else if (isO) dc = "!bg-amber-500/10 !border-amber-400/30 text-amber-200"; else if (di.hasEvents) dc = "!border-purple-500/40 text-purple-200";
-                return (<div key={di.day} className="relative"><GlassButton onClick={() => handleDayClick(di)} size="sm" className={`aspect-square !rounded-xl flex flex-col items-center justify-center text-sm relative p-0 ${dc}`} onMouseEnter={() => dh && setHolidayTooltip(dh)} onMouseLeave={() => setHolidayTooltip(null)}>
-                  <span className="text-[11px] leading-none">{di.day}</span>
-                  {calendarType === "shamsi" && <span className="text-[7px] leading-none text-gray-500 mt-0.5" dir="ltr">{di.gd}</span>}
-                  {calendarType === "gregorian" && <span className="text-[7px] leading-none text-gray-500 mt-0.5" dir="ltr">{di.jd}</span>}
-                  {di.hasEvents && !di.isToday && <div className="absolute bottom-0.5 w-1 h-1 rounded-full bg-purple-400" />}
-                  {isH && !di.isToday && <div className="absolute top-0.5 right-0.5 w-1 h-1 rounded-full bg-red-500" />}
-                  {isO && !di.isToday && !isH && <div className="absolute top-0.5 right-0.5 w-1 h-1 rounded-full bg-amber-500" />}
-                </GlassButton>{holidayTooltip && dh && holidayTooltip.name === dh.name && (<div className="absolute z-50 bottom-full mb-1 left-1/2 -translate-x-1/2 whitespace-nowrap bg-[#1a1a2e] border border-white/20 rounded-lg px-2 py-1 text-[9px] shadow-xl"><span className={dh.isHoliday ? "text-red-400" : "text-amber-400"}>{dh.isHoliday ? "🔴 " : "🟡 "}</span>{dh.name}</div>)}</div>); })}
+              {calData.days.map(di => {
+                const dh = getDayHoliday(di);
+                const isH = dh?.isHoliday;
+                const isO = dh && !dh.isHoliday;
+                let dc = "text-gray-400";
+                if (di.isToday) dc = "!bg-gradient-to-br !from-purple-600 !to-red-600 !border-purple-400/50 text-white font-bold shadow-lg shadow-purple-500/30";
+                else if (isH) dc = "!bg-red-500/25 !border-red-500/60 !text-red-300 font-bold";
+                else if (isO) dc = "!bg-amber-500/10 !border-amber-400/30 text-amber-200";
+                else if (di.hasEvents) dc = "!border-purple-500/40 text-purple-200";
+                return (
+                  <div key={di.day} className="relative">
+                    <GlassButton
+                      onClick={() => { if (longPressFired.current) { longPressFired.current = false; return; } handleDayClick(di); }}
+                      size="sm"
+                      className={`aspect-square !rounded-xl flex flex-col items-center justify-center text-sm relative p-0 select-none ${dc}`}
+                      onMouseEnter={() => dh && setHolidayTooltip(dh)}
+                      onMouseLeave={() => setHolidayTooltip(null)}
+                      onTouchStart={() => startLongPress(dh)}
+                      onTouchEnd={cancelLongPress}
+                      onTouchCancel={cancelLongPress}
+                      onTouchMove={cancelLongPress}
+                    >
+                      <span className={`text-[11px] leading-none ${isH && !di.isToday ? "text-red-300 font-bold" : ""}`}>{di.day}</span>
+                      {calendarType === "shamsi" && <span className="text-[7px] leading-none text-gray-500 mt-0.5" dir="ltr">{di.gd}</span>}
+                      {calendarType === "gregorian" && <span className="text-[7px] leading-none text-gray-500 mt-0.5" dir="ltr">{di.jd}</span>}
+                      {di.hasEvents && !di.isToday && <div className="absolute bottom-0.5 w-1 h-1 rounded-full bg-purple-400" />}
+                      {isH && !di.isToday && <div className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-red-500" />}
+                      {isO && !di.isToday && !isH && <div className="absolute top-0.5 right-0.5 w-1 h-1 rounded-full bg-amber-500" />}
+                    </GlassButton>
+                    {holidayTooltip && dh && holidayTooltip.name === dh.name && (
+                      <div className="absolute z-50 bottom-full mb-1 left-1/2 -translate-x-1/2 whitespace-nowrap bg-[#1a1a2e] border border-white/20 rounded-lg px-2 py-1 text-[9px] shadow-xl">
+                        <span className={dh.isHoliday ? "text-red-400" : "text-amber-400"}>{dh.isHoliday ? "🔴 " : "🟡 "}</span>{dh.name}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
             {/* Month Events */}
             {getMonthEvents().length > 0 && (<div className="mt-5"><h3 className="text-xs font-semibold text-gray-400 mb-2 flex items-center gap-2"><List size={12} />{t.thisMonthEvents} ({getMonthEvents().length})</h3><div className="space-y-2">{getMonthEvents().map(ev => (<GlassButton key={ev.id} onClick={() => { setSelectedEvent(ev); setShowDetailModal(true); }} className="w-full !rounded-xl p-3 text-right"><div className="flex items-center gap-3"><div className="w-9 h-9 rounded-lg bg-gradient-to-br from-purple-600/30 to-red-600/30 flex items-center justify-center flex-shrink-0">{EVENT_TYPE_ICONS[ev.eventType] || <Music size={14} />}</div><div className="flex-1 min-w-0"><p className="text-sm font-medium text-white truncate">{ev.title || t[ev.eventType as keyof typeof t]}</p><div className="flex items-center gap-3 mt-0.5"><span className="text-[10px] text-purple-300 flex items-center gap-1"><Calendar size={9} />{ev.shamsiDate}</span>{ev.venue && <span className="text-[10px] text-gray-400 flex items-center gap-1"><MapPin size={9} />{ev.venue}</span>}</div></div><span className={`text-[9px] px-1.5 py-0.5 rounded-full border flex-shrink-0 ${STATUS_COLORS[ev.status] || ""}`}>{t[ev.status as keyof typeof t]}</span></div></GlassButton>))}</div></div>)}
@@ -1042,15 +1120,66 @@ export default function DJApp() {
 
         {/* ═══ SETTINGS ═══ */}
         {activeTab === "settings" && (<section className="mt-4 space-y-4">
-            <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-4"><h3 className="text-base font-bold text-purple-300 mb-4 flex items-center gap-2"><User size={18} />{t.profile}</h3>
-              <div className="space-y-3">
-                <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-3 py-2"><User size={14} className="text-purple-400" /><input type="text" value={profile.name} onChange={e => { setProfile(p => ({ ...p, name: e.target.value })); saveProfile({ ...profile, name: e.target.value }, googleUser?.email); }} className="flex-1 bg-transparent text-white text-sm focus:outline-none" /></div>
-                <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-3 py-2"><Phone size={14} className="text-blue-400" /><input type="tel" value={profile.phone} onChange={e => { setProfile(p => ({ ...p, phone: e.target.value })); saveProfile({ ...profile, phone: e.target.value }, googleUser?.email); }} className="flex-1 bg-transparent text-white text-sm focus:outline-none" dir="ltr" /></div>
-                <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-3 py-2"><Mail size={14} className="text-emerald-400" /><input type="email" value={profile.email} onChange={e => { setProfile(p => ({ ...p, email: e.target.value })); saveProfile({ ...profile, email: e.target.value }, googleUser?.email); }} className="flex-1 bg-transparent text-white text-sm focus:outline-none" dir="ltr" /></div>
-                <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-3 py-2"><Globe size={14} className="text-pink-400" /><input type="text" value={profile.instagram} onChange={e => { setProfile(p => ({ ...p, instagram: e.target.value })); saveProfile({ ...profile, instagram: e.target.value }, googleUser?.email); }} className="flex-1 bg-transparent text-white text-sm focus:outline-none" dir="ltr" /></div>
+            {/* Profile preview */}
+            <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-base font-bold text-purple-300 flex items-center gap-2"><User size={18} />{t.profile}</h3>
+                <GlassButton onClick={() => setShowProfileModal(true)} size="sm" variant="primary">
+                  <Edit3 size={13} className="inline ml-1" />{t.editProfile}
+                </GlassButton>
+              </div>
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-purple-600 to-red-600 flex items-center justify-center flex-shrink-0 shadow-lg shadow-purple-500/30">
+                  {googleUser?.picture
+                    ? <img src={googleUser.picture} alt="" className="w-14 h-14 rounded-2xl object-cover" />
+                    : <Music size={24} className="text-white" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-base font-bold text-white truncate">DJ {profile.name || t.notSet}</p>
+                  {profile.phone && <p className="text-[11px] text-purple-300 truncate" dir="ltr">{profile.phone}</p>}
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2 text-[11px]">
+                  <Mail size={12} className="text-emerald-400 flex-shrink-0" />
+                  <span className="text-gray-400">{t.email}:</span>
+                  <span className="text-gray-200 truncate" dir="ltr">{profile.email || t.notSet}</span>
+                </div>
+                <div className="flex items-center gap-2 text-[11px]">
+                  <Globe size={12} className="text-pink-400 flex-shrink-0" />
+                  <span className="text-gray-400">{t.instagram}:</span>
+                  <span className="text-gray-200 truncate" dir="ltr">{profile.instagram ? `@${profile.instagram}` : t.notSet}</span>
+                </div>
               </div>
             </div>
-            {/* Google Account + Drive */}
+
+            {/* Bank Cards — above Google account */}
+            <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-4">
+              <h3 className="text-base font-bold text-purple-300 mb-4 flex items-center gap-2"><CardIcon size={18} />{t.bankCards}</h3>
+              <div className="space-y-2 mb-3">{bankCards.map(card => (
+                <div key={card.id} className="bg-gradient-to-r from-purple-900/30 to-blue-900/30 border border-purple-500/20 rounded-xl p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-medium text-purple-300">{card.title}</span>
+                    <div className="flex items-center gap-1">
+                      <GlassButton onClick={() => generateCardQR(card)} size="sm" className="!px-2 !py-1"><QrCode size={12} /></GlassButton>
+                      <GlassButton onClick={() => { navigator.clipboard.writeText(card.cardNumber); alert(t.copied); }} size="sm" className="!px-2 !py-1"><Copy size={12} /></GlassButton>
+                      <GlassButton onClick={() => handleDeleteCard(card.id)} size="sm" variant="danger" className="!px-2 !py-1"><Trash2 size={12} /></GlassButton>
+                    </div>
+                  </div>
+                  <p className="text-lg font-mono text-white tracking-widest" dir="ltr">{formatCardNumber(card.cardNumber)}</p>
+                  {card.sheba && (
+                    <div className="mt-2 pt-2 border-t border-white/10 flex items-center gap-2">
+                      <Landmark size={11} className="text-blue-300 flex-shrink-0" />
+                      <span className="text-[10px] font-mono text-blue-200 break-all flex-1" dir="ltr">{card.sheba}</span>
+                      <GlassButton onClick={() => { navigator.clipboard.writeText(card.sheba || ""); alert(t.copied); }} size="sm" className="!px-2 !py-1"><Copy size={11} /></GlassButton>
+                    </div>
+                  )}
+                </div>
+              ))}</div>
+              <GlassButton onClick={() => { setBankCardForm({ title: "", cardNumber: "", sheba: "" }); setShowBankCardModal(true); }} variant="primary" className="w-full"><Plus size={14} className="inline ml-1" />{t.addCard}</GlassButton>
+            </div>
+
+            {/* Google Account */}
             <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-4">
               <h3 className="text-base font-bold text-purple-300 mb-4 flex items-center gap-2">
                 <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M23.06 12.25c0-.85-.08-1.67-.22-2.45H12v4.64h6.2a5.3 5.3 0 0 1-2.3 3.48v2.89h3.72c2.18-2 3.44-4.96 3.44-8.56Z" /><path fill="#34A853" d="M12 24c3.1 0 5.7-1.03 7.6-2.79l-3.72-2.89c-1.03.69-2.35 1.1-3.88 1.1-2.99 0-5.52-2.02-6.43-4.73H1.73v2.98A11.99 11.99 0 0 0 12 24Z" /><path fill="#FBBC05" d="M5.57 14.69a7.2 7.2 0 0 1 0-4.6V7.11H1.73a12 12 0 0 0 0 10.56l3.84-2.98Z" /><path fill="#EA4335" d="M12 4.75c1.68 0 3.19.58 4.38 1.72l3.28-3.28C17.7 1.24 15.1 0 12 0 7.3 0 3.25 2.7 1.73 7.11l3.84 2.98C6.48 6.77 9.01 4.75 12 4.75Z" /></svg>
@@ -1066,17 +1195,9 @@ export default function DJApp() {
                     </div>
                     <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 flex-shrink-0">{t.connected}</span>
                   </div>
-                  <div className="space-y-2">
-                    <GlassButton onClick={handleDriveBackup} variant="primary" className="w-full" disabled={googleBusy}>
-                      <Upload size={15} className="inline ml-2" />{t.backupToDrive}
-                    </GlassButton>
-                    <GlassButton onClick={handleDriveRestore} variant="success" className="w-full" disabled={googleBusy}>
-                      <Download size={15} className="inline ml-2" />{t.restoreFromDrive}
-                    </GlassButton>
-                    <GlassButton onClick={handleGoogleDisconnect} className="w-full">
-                      <X size={15} className="inline ml-2" />{t.disconnectGoogle}
-                    </GlassButton>
-                  </div>
+                  <GlassButton onClick={handleGoogleDisconnect} className="w-full">
+                    <X size={15} className="inline ml-2" />{t.disconnectGoogle}
+                  </GlassButton>
                 </>
               ) : (
                 <>
@@ -1090,98 +1211,79 @@ export default function DJApp() {
               )}
             </div>
 
-            {/* Notifications */}
-            <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-4">
-              <h3 className="text-base font-bold text-purple-300 mb-3 flex items-center gap-2">
-                <Bell size={18} />{t.notifications}
-              </h3>
-              <p className="text-[11px] text-gray-400 mb-3">{t.notificationsDesc}</p>
-              {notifPerm === "granted" ? (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/25 rounded-xl px-3 py-2.5">
-                    <CheckCircle size={15} className="text-emerald-400 flex-shrink-0" />
-                    <span className="text-xs text-emerald-300">{t.notificationsEnabled}</span>
+            {/* Advanced settings (collapsible) */}
+            <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl overflow-hidden">
+              <button
+                onClick={() => setShowAdvanced(v => !v)}
+                className="w-full p-4 flex items-center justify-between hover:bg-white/5 transition-all"
+              >
+                <div className="text-right">
+                  <h3 className="text-base font-bold text-purple-300 flex items-center gap-2">
+                    <Settings size={18} />{t.advancedSettings}
+                  </h3>
+                  <p className="text-[10px] text-gray-500 mt-0.5">{t.advancedSettingsDesc}</p>
+                </div>
+                {showAdvanced
+                  ? <ChevronUp size={18} className="text-gray-400 flex-shrink-0" />
+                  : <ChevronDown size={18} className="text-gray-400 flex-shrink-0" />}
+              </button>
+
+              {showAdvanced && (
+                <div className="px-4 pb-4 space-y-4 border-t border-white/5 pt-4">
+                  {/* Notifications */}
+                  <div>
+                    <h4 className="text-sm font-bold text-purple-300 mb-2 flex items-center gap-2"><Bell size={15} />{t.notifications}</h4>
+                    <p className="text-[11px] text-gray-400 mb-3">{t.notificationsDesc}</p>
+                    {notifPerm === "granted" ? (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/25 rounded-xl px-3 py-2.5">
+                          <CheckCircle size={15} className="text-emerald-400 flex-shrink-0" />
+                          <span className="text-xs text-emerald-300">{t.notificationsEnabled}</span>
+                        </div>
+                        <GlassButton onClick={handleTestNotification} className="w-full">
+                          <Bell size={15} className="inline ml-2" />{t.testNotification}
+                        </GlassButton>
+                      </div>
+                    ) : notifPerm === "denied" ? (
+                      <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/25 rounded-xl px-3 py-2.5">
+                        <AlertCircle size={15} className="text-red-400 flex-shrink-0 mt-0.5" />
+                        <span className="text-[11px] text-red-300 leading-relaxed">{t.notificationsBlocked}</span>
+                      </div>
+                    ) : notifPerm === "unsupported" ? (
+                      <p className="text-[11px] text-gray-500">{t.notificationsUnsupported}</p>
+                    ) : (
+                      <GlassButton onClick={handleEnableNotifications} variant="primary" className="w-full">
+                        <Bell size={15} className="inline ml-2" />{t.enableNotifications}
+                      </GlassButton>
+                    )}
                   </div>
-                  <GlassButton onClick={handleTestNotification} className="w-full">
-                    <Bell size={15} className="inline ml-2" />{t.testNotification}
-                  </GlassButton>
+
+                  {/* Backup */}
+                  {googleUser && (
+                    <div className="pt-3 border-t border-white/5">
+                      <h4 className="text-sm font-bold text-purple-300 mb-2 flex items-center gap-2"><Download size={15} />{t.backup}</h4>
+                      <p className="text-[11px] text-gray-400 mb-3">{locale === "fa" ? "بک‌آپ آنلاین در گوگل درایو" : "Online backup to Google Drive"}</p>
+                      <div className="space-y-2">
+                        <GlassButton onClick={handleDriveBackup} variant="primary" className="w-full" disabled={googleBusy}>
+                          <Upload size={15} className="inline ml-2" />{t.backupToDrive}
+                        </GlassButton>
+                        <GlassButton onClick={handleDriveRestore} variant="success" className="w-full" disabled={googleBusy}>
+                          <Download size={15} className="inline ml-2" />{t.restoreFromDrive}
+                        </GlassButton>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Danger zone */}
+                  <div className="pt-3 border-t border-white/5">
+                    <h4 className="text-sm font-bold text-red-300 mb-2 flex items-center gap-2"><AlertCircle size={15} />{t.dangerZone}</h4>
+                    <GlassButton onClick={() => setShowResetConfirm(true)} variant="danger" className="w-full">
+                      <RefreshCw size={15} className="inline ml-2" />{t.resetApp}
+                    </GlassButton>
+                  </div>
                 </div>
-              ) : notifPerm === "denied" ? (
-                <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/25 rounded-xl px-3 py-2.5">
-                  <AlertCircle size={15} className="text-red-400 flex-shrink-0 mt-0.5" />
-                  <span className="text-[11px] text-red-300 leading-relaxed">{t.notificationsBlocked}</span>
-                </div>
-              ) : notifPerm === "unsupported" ? (
-                <p className="text-[11px] text-gray-500">{t.notificationsUnsupported}</p>
-              ) : (
-                <GlassButton onClick={handleEnableNotifications} variant="primary" className="w-full">
-                  <Bell size={15} className="inline ml-2" />{t.enableNotifications}
-                </GlassButton>
               )}
             </div>
-
-            {/* Backup (Google Drive only) */}
-            {googleUser ? (
-              <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-4">
-                <h3 className="text-base font-bold text-purple-300 mb-4 flex items-center gap-2">
-                  <Download size={18} />{t.backup}
-                </h3>
-                <p className="text-[11px] text-gray-400 mb-3">{locale === "fa" ? "بک‌آپ آنلاین در گوگل درایو — داده‌ها روی گوشی و فضای ابری ذخیره می‌شوند" : "Online backup to Google Drive — data stored on phone and cloud"}</p>
-                <div className="space-y-2">
-                  <GlassButton onClick={handleDriveBackup} variant="primary" className="w-full" disabled={googleBusy}>
-                    <Upload size={15} className="inline ml-2" />{t.backupToDrive}
-                  </GlassButton>
-                  <GlassButton onClick={handleDriveRestore} variant="success" className="w-full" disabled={googleBusy}>
-                    <Download size={15} className="inline ml-2" />{t.restoreFromDrive}
-                  </GlassButton>
-                </div>
-              </div>
-            ) : null}
-
-            {/* Bank Cards */}
-            <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-4"><h3 className="text-base font-bold text-purple-300 mb-4 flex items-center gap-2"><CardIcon size={18} />{t.bankCards}</h3>
-              <div className="space-y-2 mb-3">{bankCards.map(card => (<div key={card.id} className="bg-gradient-to-r from-purple-900/30 to-blue-900/30 border border-purple-500/20 rounded-xl p-3">
-                <div className="flex items-center justify-between mb-2"><span className="text-xs font-medium text-purple-300">{card.title}</span><div className="flex items-center gap-1"><GlassButton onClick={() => generateCardQR(card)} size="sm" className="!px-2 !py-1"><QrCode size={12} /></GlassButton><GlassButton onClick={() => { navigator.clipboard.writeText(card.cardNumber); alert(t.copied); }} size="sm" className="!px-2 !py-1"><Copy size={12} /></GlassButton><GlassButton onClick={() => handleDeleteCard(card.id)} size="sm" variant="danger" className="!px-2 !py-1"><Trash2 size={12} /></GlassButton></div></div>
-                <p className="text-lg font-mono text-white tracking-widest" dir="ltr">{formatCardNumber(card.cardNumber)}</p>
-              </div>))}</div>
-              <GlassButton onClick={() => { setBankCardForm({ title: "", cardNumber: "" }); setShowBankCardModal(true); }} variant="primary" className="w-full"><Plus size={14} className="inline ml-1" />{t.addCard}</GlassButton>
-            </div>
-
-            {/* Sheba / IBAN — stored on this device only */}
-            <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-4">
-              <h3 className="text-base font-bold text-purple-300 mb-3 flex items-center gap-2">
-                <Landmark size={18} />{t.sheba}
-              </h3>
-              {sheba ? (
-                <div className="bg-gradient-to-r from-blue-900/30 to-purple-900/30 border border-blue-500/20 rounded-xl p-3 mb-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-medium text-blue-300">{t.shebaNumber}</span>
-                    <div className="flex items-center gap-1">
-                      <GlassButton onClick={() => { navigator.clipboard.writeText(sheba); alert(t.copied); }} size="sm" className="!px-2 !py-1"><Copy size={12} /></GlassButton>
-                      <GlassButton onClick={() => { saveSheba(""); setSheba(""); }} size="sm" variant="danger" className="!px-2 !py-1"><Trash2 size={12} /></GlassButton>
-                    </div>
-                  </div>
-                  <p className="text-sm font-mono text-white tracking-wider break-all" dir="ltr">{sheba}</p>
-                </div>
-              ) : null}
-              <label className={lc}>{t.addSheba}</label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={shebaDraft}
-                  onChange={e => setShebaDraft(e.target.value.toUpperCase())}
-                  className={ic}
-                  placeholder="IR000000000000000000000000"
-                  dir="ltr"
-                  maxLength={26}
-                />
-                <GlassButton onClick={handleSaveSheba} variant="success" size="md" disabled={shebaDraft.replace(/\s/g, "").length < 24}>
-                  <CheckCircle size={16} />
-                </GlassButton>
-              </div>
-            </div>
-
-            <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-4"><h3 className="text-base font-bold text-red-300 mb-4 flex items-center gap-2"><AlertCircle size={18} />{t.dangerZone}</h3><GlassButton onClick={() => setShowResetConfirm(true)} variant="danger" className="w-full"><RefreshCw size={16} className="inline ml-2" />{t.resetApp}</GlassButton></div>
 
             {/* Logout */}
             <GlassButton onClick={() => setShowLogoutConfirm(true)} variant="danger" className="w-full !bg-red-600/25 !border-red-500/40">
@@ -1211,6 +1313,83 @@ export default function DJApp() {
           </div>
         </div>
       </div>)}
+
+      {/* Calendar long-press tip (first visit) */}
+      {showCalendarTip && (
+        <div className="fixed inset-0 z-[70] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-xs bg-[#1a1a2e]/95 backdrop-blur-xl rounded-3xl border border-purple-500/30 p-6 text-center">
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-purple-600/30 to-red-600/30 flex items-center justify-center mx-auto mb-4">
+              <Info size={24} className="text-purple-300" />
+            </div>
+            <h3 className="text-base font-bold text-white mb-2">{t.calendarTipTitle}</h3>
+            <p className="text-xs text-gray-300 leading-relaxed mb-3">{t.calendarTipBody}</p>
+            <div className="flex items-center justify-center gap-2 bg-red-500/10 border border-red-500/25 rounded-xl px-3 py-2 mb-4">
+              <div className="w-2.5 h-2.5 rounded-full bg-red-500 flex-shrink-0" />
+              <span className="text-[11px] text-red-300">{t.holidayLegend}</span>
+            </div>
+            <GlassButton onClick={() => setShowCalendarTip(false)} variant="primary" className="w-full">
+              <CheckCircle size={15} className="inline ml-2" />{t.gotIt}
+            </GlassButton>
+          </div>
+        </div>
+      )}
+
+      {/* Profile edit modal */}
+      {showProfileModal && (
+        <div className="fixed inset-0 z-[70] bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="w-full max-w-sm bg-[#1a1a2e]/95 backdrop-blur-xl rounded-t-3xl sm:rounded-3xl border-t sm:border border-purple-500/30 p-5 max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-bold text-purple-300 flex items-center gap-2">
+                <User size={17} />{t.editProfile}
+              </h3>
+              <button onClick={() => setShowProfileModal(false)} className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 transition-all">
+                <X size={15} />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className={lc}>{t.djName} *</label>
+                <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-2xl px-3 py-2.5">
+                  <User size={14} className="text-purple-400 flex-shrink-0" />
+                  <input type="text" value={profile.name} onChange={e => setProfile(p => ({ ...p, name: e.target.value }))} className="flex-1 bg-transparent text-white text-sm focus:outline-none" />
+                </div>
+              </div>
+              <div>
+                <label className={lc}>{t.phone} *</label>
+                <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-2xl px-3 py-2.5">
+                  <Phone size={14} className="text-blue-400 flex-shrink-0" />
+                  <input type="tel" value={profile.phone} onChange={e => setProfile(p => ({ ...p, phone: e.target.value }))} className="flex-1 bg-transparent text-white text-sm focus:outline-none" dir="ltr" />
+                </div>
+              </div>
+              <div>
+                <label className={lc}>{t.email}</label>
+                <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-2xl px-3 py-2.5">
+                  <Mail size={14} className="text-emerald-400 flex-shrink-0" />
+                  <input type="email" value={profile.email} onChange={e => setProfile(p => ({ ...p, email: e.target.value }))} className="flex-1 bg-transparent text-white text-sm focus:outline-none" dir="ltr" />
+                </div>
+              </div>
+              <div>
+                <label className={lc}>{t.instagram}</label>
+                <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-2xl px-3 py-2.5">
+                  <Globe size={14} className="text-pink-400 flex-shrink-0" />
+                  <input type="text" value={profile.instagram} onChange={e => setProfile(p => ({ ...p, instagram: e.target.value }))} className="flex-1 bg-transparent text-white text-sm focus:outline-none" dir="ltr" />
+                </div>
+              </div>
+              <div className="flex gap-2 pt-1">
+                <GlassButton onClick={() => setShowProfileModal(false)} className="flex-1">{t.cancel}</GlassButton>
+                <GlassButton
+                  onClick={() => { saveProfile(profile, googleUser?.email); setShowProfileModal(false); }}
+                  variant="success"
+                  className="flex-1"
+                  disabled={!profile.name.trim() || !profile.phone.trim()}
+                >
+                  <CheckCircle size={15} className="inline ml-2" />{t.save}
+                </GlassButton>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Send bank card / Sheba via SMS */}
       {shareKind && (
@@ -1250,7 +1429,21 @@ export default function DJApp() {
           <div className="flex items-center justify-between mb-4"><h3 className="text-lg font-bold text-purple-300">{t.addCard}</h3><GlassButton onClick={() => setShowBankCardModal(false)} size="sm"><X size={16} /></GlassButton></div>
           <div className="space-y-3">
             <div><label className={lc}>{t.cardTitle}</label><input type="text" value={bankCardForm.title} onChange={e => setBankCardForm(p => ({ ...p, title: e.target.value }))} className={ic} placeholder={locale === "fa" ? "مثلا: کارت ملی" : "e.g. Main Card"} /></div>
-            <div><label className={lc}>{t.cardNumber}</label><input type="text" value={bankCardForm.cardNumber} onChange={e => setBankCardForm(p => ({ ...p, cardNumber: e.target.value.replace(/\D/g, "") }))} className={ic} placeholder="6037************" dir="ltr" maxLength={16} /></div>
+            <div><label className={lc}>{t.cardNumber}</label><input type="text" value={bankCardForm.cardNumber} onChange={e => setBankCardForm(p => ({ ...p, cardNumber: e.target.value.replace(/\D/g, "") }))} className={ic} placeholder="6037************" dir="ltr" inputMode="numeric" maxLength={16} /></div>
+            <div>
+              <label className={lc}>
+                {t.cardShebaOptional} <span className="text-[10px] text-gray-500">({t.optional})</span>
+              </label>
+              <input
+                type="text"
+                value={bankCardForm.sheba}
+                onChange={e => setBankCardForm(p => ({ ...p, sheba: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "") }))}
+                className={ic}
+                placeholder="IR000000000000000000000000"
+                dir="ltr"
+                maxLength={26}
+              />
+            </div>
             <GlassButton onClick={handleSaveCard} variant="success" className="w-full" disabled={!bankCardForm.title || bankCardForm.cardNumber.length < 16}><CheckCircle size={16} className="inline ml-2" />{t.save}</GlassButton>
           </div>
         </div>
@@ -1388,7 +1581,7 @@ export default function DJApp() {
       </div>)}
 
       {/* FAB */}
-      {!showEventModal && !showDetailModal && !showDeleteConfirm && !showResetConfirm && !showLogoutConfirm && !selectedDate && !showQRModal && !showMonthPicker && !showReminderModal && !showBankCardModal && !showShareCard && !showCardQR && !showDatePicker && !showReminderDatePicker && !shareKind && activeTab !== "settings" && (
+      {!showEventModal && !showDetailModal && !showDeleteConfirm && !showResetConfirm && !showLogoutConfirm && !selectedDate && !showQRModal && !showMonthPicker && !showReminderModal && !showBankCardModal && !showShareCard && !showCardQR && !showDatePicker && !showReminderDatePicker && !shareKind && !showProfileModal && !showCalendarTip && activeTab !== "settings" && (
         <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-30"><GlassButton onClick={() => openNewEventForm()} variant="primary" size="lg" className="shadow-2xl shadow-purple-500/50"><Plus size={22} className="inline ml-2" />{t.newEvent}</GlassButton></div>
       )}
 

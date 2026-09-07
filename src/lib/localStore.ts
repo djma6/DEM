@@ -42,6 +42,8 @@ export interface LocalBankCard {
   id: number;
   title: string;
   cardNumber: string;
+  /** Optional IBAN/Sheba attached to this specific card */
+  sheba?: string;
 }
 
 export interface StoredProfile {
@@ -188,9 +190,18 @@ export function getBankCards(): LocalBankCard[] {
   return read<LocalBankCard>(CARDS_KEY);
 }
 
-export function addBankCard(title: string, cardNumber: string): LocalBankCard {
+export function addBankCard(
+  title: string,
+  cardNumber: string,
+  sheba?: string
+): LocalBankCard {
   const list = getBankCards();
-  const created = { id: nextId(), title, cardNumber };
+  const created: LocalBankCard = {
+    id: nextId(),
+    title,
+    cardNumber,
+    sheba: sheba?.trim() ? sheba.trim().toUpperCase() : undefined,
+  };
   list.push(created);
   write(CARDS_KEY, list);
   return created;
