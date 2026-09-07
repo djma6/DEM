@@ -46,15 +46,19 @@ export interface CategoryStyle {
   chip: string;
 }
 
-const STYLES: Record<HolidayCategory, CategoryStyle> = {
-  // شهادت — قرمز
+/**
+ * Styles for days that are an OFFICIAL day off (تعطیل رسمی).
+ * Red is reserved for these only, so a DJ can spot real days off instantly.
+ */
+const OFF_STYLES: Record<HolidayCategory, CategoryStyle> = {
+  // شهادت و تعطیل رسمی — قرمز
   martyrdom: {
     cell: "!bg-red-500/25 !border-red-500/60 !text-red-300 font-bold",
     dot: "bg-red-500",
     text: "text-red-300",
     chip: "bg-red-500/15 border-red-500/30 text-red-300",
   },
-  // ولادت ائمه — صورتی
+  // ولادت ائمه و تعطیل — صورتی
   birth: {
     cell: "!bg-pink-500/25 !border-pink-400/60 !text-pink-200 font-bold",
     dot: "bg-pink-400",
@@ -75,28 +79,25 @@ const STYLES: Record<HolidayCategory, CategoryStyle> = {
     text: "text-emerald-300",
     chip: "bg-emerald-500/15 border-emerald-400/30 text-emerald-300",
   },
-  // ملی — قرمز ملایم
+  // ملی و تعطیل — قرمز
   national: {
-    cell: "!bg-red-500/20 !border-red-500/50 !text-red-300 font-bold",
+    cell: "!bg-red-500/25 !border-red-500/60 !text-red-300 font-bold",
     dot: "bg-red-500",
     text: "text-red-300",
     chip: "bg-red-500/15 border-red-500/30 text-red-300",
   },
-  // ولنتاین — قرمز + صورتی
   valentine: {
     cell: "!bg-gradient-to-br !from-red-500/30 !to-pink-500/30 !border-pink-400/60 !text-pink-200 font-bold",
     dot: "bg-gradient-to-br from-red-500 to-pink-400",
     text: "text-pink-300",
     chip: "bg-gradient-to-r from-red-500/20 to-pink-500/20 border-pink-400/30 text-pink-200",
   },
-  // هالووین — بنفش + قرمز
   halloween: {
     cell: "!bg-gradient-to-br !from-purple-600/35 !to-red-600/30 !border-purple-400/60 !text-purple-200 font-bold",
     dot: "bg-gradient-to-br from-purple-500 to-red-500",
     text: "text-purple-300",
     chip: "bg-gradient-to-r from-purple-600/20 to-red-600/20 border-purple-400/30 text-purple-200",
   },
-  // کریسمس — سفید + صورتی + قرمز
   christmas: {
     cell: "!bg-gradient-to-br !from-white/25 !via-pink-400/25 !to-red-500/30 !border-white/60 !text-white font-bold",
     dot: "bg-gradient-to-br from-white via-pink-300 to-red-500",
@@ -104,11 +105,85 @@ const STYLES: Record<HolidayCategory, CategoryStyle> = {
     chip: "bg-gradient-to-r from-white/15 via-pink-400/20 to-red-500/20 border-white/30 text-pink-100",
   },
   seasonal: {
+    cell: "!bg-emerald-500/20 !border-emerald-400/50 !text-emerald-200 font-bold",
+    dot: "bg-emerald-400",
+    text: "text-emerald-300",
+    chip: "bg-emerald-500/15 border-emerald-400/30 text-emerald-300",
+  },
+  observance: {
+    cell: "!bg-red-500/25 !border-red-500/60 !text-red-300 font-bold",
+    dot: "bg-red-500",
+    text: "text-red-300",
+    chip: "bg-red-500/15 border-red-500/30 text-red-300",
+  },
+};
+
+/**
+ * Styles for WORKING days that merely carry an occasion (مناسبت، نه تعطیل).
+ * These never use red so they cannot be mistaken for a day off.
+ */
+const OCCASION_STYLES: Record<HolidayCategory, CategoryStyle> = {
+  // شهادت ولی تعطیل نیست — نارنجی
+  martyrdom: {
+    cell: "!bg-orange-500/12 !border-orange-400/40 text-orange-200",
+    dot: "bg-orange-400",
+    text: "text-orange-300",
+    chip: "bg-orange-500/15 border-orange-400/30 text-orange-300",
+  },
+  // ولادت ولی تعطیل نیست — صورتی ملایم
+  birth: {
+    cell: "!bg-pink-500/12 !border-pink-400/35 text-pink-200",
+    dot: "bg-pink-300",
+    text: "text-pink-200",
+    chip: "bg-pink-500/12 border-pink-400/25 text-pink-200",
+  },
+  // عید غیرتعطیل — صورتی ملایم
+  eid: {
+    cell: "!bg-pink-500/12 !border-pink-400/35 text-pink-200",
+    dot: "bg-pink-300",
+    text: "text-pink-200",
+    chip: "bg-pink-500/12 border-pink-400/25 text-pink-200",
+  },
+  // جشن‌های نوروزی غیرتعطیل — سبز ملایم
+  nowruz: {
+    cell: "!bg-emerald-500/12 !border-emerald-400/35 text-emerald-200",
+    dot: "bg-emerald-300",
+    text: "text-emerald-200",
+    chip: "bg-emerald-500/12 border-emerald-400/25 text-emerald-200",
+  },
+  // مناسبت ملی غیرتعطیل — آبی
+  national: {
+    cell: "!bg-blue-500/12 !border-blue-400/35 text-blue-200",
+    dot: "bg-blue-400",
+    text: "text-blue-300",
+    chip: "bg-blue-500/15 border-blue-400/30 text-blue-300",
+  },
+  valentine: {
+    cell: "!bg-gradient-to-br !from-red-500/18 !to-pink-500/18 !border-pink-400/40 text-pink-200",
+    dot: "bg-gradient-to-br from-red-400 to-pink-400",
+    text: "text-pink-300",
+    chip: "bg-gradient-to-r from-red-500/15 to-pink-500/15 border-pink-400/25 text-pink-200",
+  },
+  halloween: {
+    cell: "!bg-gradient-to-br !from-purple-600/22 !to-red-600/18 !border-purple-400/40 text-purple-200",
+    dot: "bg-gradient-to-br from-purple-500 to-red-500",
+    text: "text-purple-300",
+    chip: "bg-gradient-to-r from-purple-600/15 to-red-600/15 border-purple-400/25 text-purple-200",
+  },
+  christmas: {
+    cell: "!bg-gradient-to-br !from-white/15 !via-pink-400/15 !to-red-500/18 !border-white/40 text-pink-100",
+    dot: "bg-gradient-to-br from-white via-pink-300 to-red-400",
+    text: "text-pink-100",
+    chip: "bg-gradient-to-r from-white/12 via-pink-400/15 to-red-500/15 border-white/25 text-pink-100",
+  },
+  // مناسبت فصلی — کهربایی
+  seasonal: {
     cell: "!bg-amber-500/12 !border-amber-400/35 text-amber-200",
     dot: "bg-amber-400",
     text: "text-amber-300",
     chip: "bg-amber-500/15 border-amber-400/30 text-amber-300",
   },
+  // مناسبت عمومی — کهربایی ملایم
   observance: {
     cell: "!bg-amber-500/10 !border-amber-400/30 text-amber-200",
     dot: "bg-amber-500",
@@ -117,8 +192,16 @@ const STYLES: Record<HolidayCategory, CategoryStyle> = {
   },
 };
 
-export function categoryStyle(category?: HolidayCategory): CategoryStyle {
-  return STYLES[category ?? "observance"];
+/**
+ * Resolve the visual style for an occasion.
+ * Red is applied ONLY when the day is an official day off.
+ */
+export function categoryStyle(
+  category?: HolidayCategory,
+  isHoliday: boolean = true
+): CategoryStyle {
+  const key = category ?? "observance";
+  return isHoliday ? OFF_STYLES[key] : OCCASION_STYLES[key];
 }
 
 /* ────────────────────────────────────────────────────────────

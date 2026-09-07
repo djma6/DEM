@@ -12,6 +12,27 @@ export interface NotifiableEvent {
 }
 
 const LAST_NOTIFY_KEY = "djLastNotifyDate";
+const LEAD_DAYS_KEY = "djReminderLeadDays";
+
+/** How many days ahead of an event the user wants to be reminded. */
+export type LeadDays = 0 | 1 | 2 | 3 | 7;
+
+export function getLeadDays(): LeadDays {
+  try {
+    const raw = parseInt(localStorage.getItem(LEAD_DAYS_KEY) || "1", 10);
+    return ([0, 1, 2, 3, 7] as number[]).includes(raw) ? (raw as LeadDays) : 1;
+  } catch {
+    return 1;
+  }
+}
+
+export function setLeadDays(days: LeadDays): void {
+  try {
+    localStorage.setItem(LEAD_DAYS_KEY, String(days));
+  } catch {
+    /* ignore */
+  }
+}
 
 export function notificationsSupported(): boolean {
   return typeof window !== "undefined" && "Notification" in window;
@@ -94,10 +115,17 @@ export async function sendTestNotification(
 
   const now = new Date();
   const todayStr = ymd(now);
-  const tomorrowStr = ymd(new Date(now.getTime() + 24 * 60 * 60 * 1000));
+  const leadDays = getLeadDays();
   const active = (events || []).filter((e) => e.status !== "cancelled");
   const todayEvents = active.filter((e) => e.gregorianDate === todayStr);
-  const tomorrowEvents = active.filter((e) => e.gregorianDate === tomorrowStr);
+
+  const windowDates: string[] = [];
+  for (let i = 1; i <= leadDays; i++) {
+    windowDates.push(ymd(new Date(now.getTime() + i * 86400000)));
+  }
+  const upcomingEvents = active
+    .filter((e) => windowDates.includes(e.gregorianDate))
+    .sort((a, b) => a.gregorianDate.localeCompare(b.gregorianDate));
 
   const label = (e: NotifiableEvent) =>
     `${e.title || e.eventType}${e.venue ? ` — ${e.venue}` : ""}`;
@@ -108,10 +136,12 @@ export async function sendTestNotification(
       (locale === "fa" ? "امروز: " : "Today: ") + todayEvents.map(label).join("، ")
     );
   }
-  if (tomorrowEvents.length > 0) {
-    lines.push(
-      (locale === "fa" ? "فردا: " : "Tomorrow: ") + tomorrowEvents.map(label).join("، ")
-    );
+  if (upcomingEvents.length > 0) {
+    const prefix =
+      locale === "fa"
+        ? leadDays === 1 ? "فردا: " : `${leadDays} روز آینده: `
+        : leadDays === 1 ? "Tomorrow: " : `Next ${leadDays} days: `;
+    lines.push(prefix + upcomingEvents.map(label).join("، "));
   }
   if (lines.length === 0) {
     lines.push(
@@ -134,21 +164,28 @@ export async function runDailyEventNotifications(
   events: NotifiableEvent[],
   locale: "fa" | "en",
   opts: { force?: boolean } = {}
-): Promise<{ notified: boolean; todayCount: number; tomorrowCount: number }> {
+): Promise<{ notified: boolean; todayCount: number; upcomingCount: number; delivered: boolean }> {
   const now = new Date();
   const todayStr = ymd(now);
-  const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-  const tomorrowStr = ymd(tomorrow);
+  const leadDays = getLeadDays();
 
   const active = (events || []).filter((e) => e.status !== "cancelled");
   const todayEvents = active.filter((e) => e.gregorianDate === todayStr);
-  const tomorrowEvents = active.filter((e) => e.gregorianDate === tomorrowStr);
+
+  // Every event inside the user's chosen lead window (excluding today).
+  const windowDates: string[] = [];
+  for (let i = 1; i <= leadDays; i++) {
+    windowDates.push(ymd(new Date(now.getTime() + i * 86400000)));
+  }
+  const upcomingEvents = active
+    .filter((e) => windowDates.includes(e.gregorianDate))
+    .sort((a, b) => a.gregorianDate.localeCompare(b.gregorianDate));
 
   const result = {
     notified: false,
     todayCount: todayEvents.length,
-    tomorrowCount: tomorrowEvents.length,
-    delivered: false as boolean,
+    upcomingCount: upcomingEvents.length,
+    delivered: false,
   };
 
   if (!notificationsSupported() || Notification.permission !== "granted") return result;
@@ -162,7 +199,7 @@ export async function runDailyEventNotifications(
     }
   }
 
-  if (todayEvents.length === 0 && tomorrowEvents.length === 0) {
+  if (todayEvents.length === 0 && upcomingEvents.length === 0) {
     try {
       localStorage.setItem(LAST_NOTIFY_KEY, todayStr);
     } catch {
@@ -182,10 +219,19 @@ export async function runDailyEventNotifications(
     delivered = (await showNotification(title, body, "igig-today")) || delivered;
   }
 
-  if (tomorrowEvents.length > 0) {
-    const title = locale === "fa" ? "📅 برنامه‌های فردا" : "📅 Tomorrow's Events";
-    const body = tomorrowEvents.map(label).join("\n");
-    delivered = (await showNotification(title, body, "igig-tomorrow")) || delivered;
+  if (upcomingEvents.length > 0) {
+    const title =
+      locale === "fa"
+        ? leadDays === 1
+          ? "📅 برنامه‌های فردا"
+          : `📅 برنامه‌های ${leadDays} روز آینده`
+        : leadDays === 1
+        ? "📅 Tomorrow's Events"
+        : `📅 Next ${leadDays} Days`;
+    const body = upcomingEvents
+      .map((e) => `${e.shamsiDate} · ${label(e)}`)
+      .join("\n");
+    delivered = (await showNotification(title, body, "igig-upcoming")) || delivered;
   }
 
   result.delivered = delivered;

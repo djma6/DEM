@@ -33,6 +33,9 @@ import {
   requestNotificationPermission,
   runDailyEventNotifications,
   sendTestNotification,
+  getLeadDays,
+  setLeadDays,
+  type LeadDays,
 } from "@/lib/notifications";
 import {
   initSync,
@@ -136,7 +139,8 @@ export default function DJApp() {
   const [bankCards, setBankCards] = useState<BankCardData[]>([]);
   const [stats, setStats] = useState<Stats>({ totalEvents: 0, unsettledEvents: 0, totalRevenue: 0, upcomingCount: 0, upcomingEvents: [] });
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"dashboard" | "calendar" | "events" | "settings">("dashboard");
+  type TabId = "dashboard" | "calendar" | "events" | "settings";
+  const [activeTab, setActiveTab] = useState<TabId>("dashboard");
   const [showEventModal, setShowEventModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -161,6 +165,8 @@ export default function DJApp() {
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showCalendarTip, setShowCalendarTip] = useState(false);
+  const [leadDays, setLeadDaysState] = useState<LeadDays>(1);
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressFired = useRef(false);
 
@@ -222,7 +228,23 @@ export default function DJApp() {
   // Init + notification permission state
   useEffect(() => {
     setNotifPerm(notificationPermission());
+    setLeadDaysState(getLeadDays());
   }, []);
+
+  // Restore the last open tab so a refresh keeps you on the same screen
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("djActiveTab") as TabId | null;
+      if (saved && ["dashboard", "calendar", "events", "settings"].includes(saved)) {
+        setActiveTab(saved);
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  // Persist the active tab on every change
+  useEffect(() => {
+    try { localStorage.setItem("djActiveTab", activeTab); } catch { /* ignore */ }
+  }, [activeTab]);
 
   // Background sync: restore any pending queue and subscribe to state changes
   useEffect(() => {
@@ -288,6 +310,68 @@ export default function DJApp() {
   useEffect(() => {
     setSyncEnabled(!!googleUser);
   }, [googleUser]);
+
+  // ── Hardware / browser back button ──
+  // 1st back  → close any open popup, otherwise go to the dashboard
+  // 2nd back  → on the dashboard, ask before leaving the app
+  useEffect(() => {
+    if (showSetup || needsInstall !== false) return;
+
+    // Seed an extra history entry so the first back press is captured
+    try { window.history.pushState({ igig: true }, ""); } catch { /* ignore */ }
+
+    const anyOverlayOpen = () =>
+      showEventModal || showDetailModal || showDeleteConfirm || showResetConfirm ||
+      showLogoutConfirm || showMonthPicker || showQRModal || showShareCard ||
+      showCardQR || showBankCardModal || showReminderModal || showDatePicker ||
+      showReminderDatePicker || showProfileModal || showCalendarTip ||
+      showExitConfirm || !!shareKind || !!selectedDate;
+
+    const closeTopOverlay = () => {
+      if (showExitConfirm) { setShowExitConfirm(false); return; }
+      if (showDatePicker) { setShowDatePicker(false); return; }
+      if (showReminderDatePicker) { setShowReminderDatePicker(false); return; }
+      if (showCardQR) { setShowCardQR(false); return; }
+      if (showQRModal) { setShowQRModal(false); return; }
+      if (showDeleteConfirm) { setShowDeleteConfirm(false); return; }
+      if (showResetConfirm) { setShowResetConfirm(false); return; }
+      if (showLogoutConfirm) { setShowLogoutConfirm(false); return; }
+      if (showMonthPicker) { setShowMonthPicker(false); return; }
+      if (showCalendarTip) { setShowCalendarTip(false); return; }
+      if (shareKind) { setShareKind(null); return; }
+      if (showBankCardModal) { setShowBankCardModal(false); return; }
+      if (showProfileModal) { setShowProfileModal(false); return; }
+      if (showReminderModal) { setShowReminderModal(false); return; }
+      if (showShareCard) { setShowShareCard(false); return; }
+      if (showEventModal) { setShowEventModal(false); setEditingEvent(null); return; }
+      if (showDetailModal) { setShowDetailModal(false); setSelectedEvent(null); return; }
+      if (selectedDate) { setSelectedDate(null); return; }
+    };
+
+    const onPopState = () => {
+      // Always keep one spare history entry so we stay in control
+      try { window.history.pushState({ igig: true }, ""); } catch { /* ignore */ }
+
+      if (anyOverlayOpen()) {
+        closeTopOverlay();
+        return;
+      }
+      if (activeTab !== "dashboard") {
+        setActiveTab("dashboard");
+        return;
+      }
+      setShowExitConfirm(true);
+    };
+
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [
+    showSetup, needsInstall, activeTab, selectedDate, shareKind,
+    showEventModal, showDetailModal, showDeleteConfirm, showResetConfirm,
+    showLogoutConfirm, showMonthPicker, showQRModal, showShareCard, showCardQR,
+    showBankCardModal, showReminderModal, showDatePicker, showReminderDatePicker,
+    showProfileModal, showCalendarTip, showExitConfirm,
+  ]);
 
   // Show the calendar long-press tip the first time the tab is opened.
   useEffect(() => {
@@ -1017,7 +1101,7 @@ export default function DJApp() {
               const todayHoliday = sh || gh;
               if (!todayHoliday) return null;
               const name = locale === "fa" ? todayHoliday.faName : todayHoliday.enName;
-              const style = categoryStyle(todayHoliday.category);
+              const style = categoryStyle(todayHoliday.category, todayHoliday.isHoliday);
               return (
                 <div className={`mt-3 rounded-2xl p-3 flex items-center gap-2 border ${style.chip}`}>
                   <span className="text-base">{todayHoliday.emoji || (todayHoliday.isHoliday ? "🔴" : "🟡")}</span>
@@ -1079,10 +1163,10 @@ export default function DJApp() {
             <div className="flex items-center justify-between mb-3"><div className="flex items-center gap-2"><GlassButton onClick={() => switchCalendarType(calendarType === "shamsi" ? "gregorian" : "shamsi")} size="sm"><Calendar size={12} className="inline" /> {calendarType === "shamsi" ? t.shamsiDate : t.gregorianDate}</GlassButton><GlassButton onClick={goToToday} size="sm" variant="primary">{t.today}</GlassButton></div></div>
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2.5 text-[9px] flex-wrap">
-                <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-red-500" /><span className="text-red-300">{t.catMartyrdom}</span></div>
-                <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-pink-400" /><span className="text-pink-300">{t.catBirth}</span></div>
-                <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-emerald-400" /><span className="text-emerald-300">{t.catNowruz}</span></div>
-                <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-amber-500" /><span className="text-amber-300">{t.occasion}</span></div>
+                <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-red-500" /><span className="text-red-300">{t.legendOff}</span></div>
+                <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-orange-400" /><span className="text-orange-300">{t.legendMourning}</span></div>
+                <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-pink-400" /><span className="text-pink-300">{t.legendCelebration}</span></div>
+                <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-amber-400" /><span className="text-amber-300">{t.occasion}</span></div>
                 <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-purple-400" /><span className="text-gray-400">{locale === "fa" ? "ایونت" : "Event"}</span></div>
               </div>
               <button onClick={() => setShowCalendarTip(true)} title={t.calendarTipTitle} className="w-7 h-7 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-purple-300 hover:bg-white/10 transition-all flex-shrink-0">
@@ -1097,7 +1181,7 @@ export default function DJApp() {
               {Array.from({ length: calData.startDayOfWeek }).map((_, i) => <div key={`e${i}`} className="aspect-square" />)}
               {calData.days.map(di => {
                 const dh = getDayHoliday(di);
-                const style = dh ? categoryStyle(dh.category) : null;
+                const style = dh ? categoryStyle(dh.category, dh.isHoliday) : null;
                 let dc = "text-gray-400";
                 if (di.isToday) {
                   dc = "!bg-gradient-to-br !from-purple-600 !to-red-600 !border-purple-400/50 text-white font-bold shadow-lg shadow-purple-500/30";
@@ -1133,7 +1217,7 @@ export default function DJApp() {
                     {holidayTooltip && dh && holidayTooltip.name === dh.name && (
                       <div className="absolute z-50 bottom-full mb-1 left-1/2 -translate-x-1/2 whitespace-nowrap bg-[#1a1a2e] border border-white/20 rounded-lg px-2 py-1 text-[9px] shadow-xl">
                         {dh.emoji && <span className="ml-1">{dh.emoji}</span>}
-                        <span className={categoryStyle(dh.category).text}>{dh.name}</span>
+                        <span className={categoryStyle(dh.category, dh.isHoliday).text}>{dh.name}</span>
                       </div>
                     )}
                   </div>
@@ -1273,6 +1357,33 @@ export default function DJApp() {
                         <GlassButton onClick={handleTestNotification} className="w-full">
                           <Bell size={15} className="inline ml-2" />{t.testNotification}
                         </GlassButton>
+
+                        {/* Reminder lead time */}
+                        <div className="pt-3 mt-1 border-t border-white/5">
+                          <label className={lc}>{t.reminderLeadTime}</label>
+                          <p className="text-[10px] text-gray-500 mb-2">{t.reminderLeadTimeDesc}</p>
+                          <div className="grid grid-cols-3 gap-1.5">
+                            {([
+                              { v: 0 as LeadDays, label: t.leadSameDay },
+                              { v: 1 as LeadDays, label: t.leadOneDay },
+                              { v: 2 as LeadDays, label: t.leadTwoDays },
+                              { v: 3 as LeadDays, label: t.leadThreeDays },
+                              { v: 7 as LeadDays, label: t.leadOneWeek },
+                            ]).map(opt => (
+                              <button
+                                key={opt.v}
+                                onClick={() => { setLeadDays(opt.v); setLeadDaysState(opt.v); }}
+                                className={`py-2 rounded-xl text-[10px] font-medium border transition-all ${
+                                  leadDays === opt.v
+                                    ? "bg-purple-600/30 border-purple-400/50 text-purple-100"
+                                    : "bg-white/5 border-white/10 text-gray-300 hover:bg-white/10"
+                                }`}
+                              >
+                                {opt.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
                       </div>
                     ) : notifPerm === "denied" ? (
                       <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/25 rounded-xl px-3 py-2.5">
@@ -1343,6 +1454,36 @@ export default function DJApp() {
           </div>
         </div>
       </div>)}
+
+      {/* Exit confirmation (2nd back press on dashboard) */}
+      {showExitConfirm && (
+        <div className="fixed inset-0 z-[85] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-xs bg-[#1a1a2e]/95 backdrop-blur-xl rounded-3xl border border-red-500/30 p-6 text-center">
+            <div className="w-14 h-14 rounded-full bg-red-600/20 flex items-center justify-center mx-auto mb-4">
+              <LogOut size={24} className="text-red-400" />
+            </div>
+            <h3 className="text-base font-bold text-white mb-2">{t.exitConfirmTitle}</h3>
+            <p className="text-xs text-gray-400 mb-5">{t.exitConfirmBody}</p>
+            <div className="flex gap-2">
+              <GlassButton onClick={() => setShowExitConfirm(false)} className="flex-1">
+                {t.exitStay}
+              </GlassButton>
+              <GlassButton
+                onClick={() => {
+                  setShowExitConfirm(false);
+                  // Leaves the PWA; falls back to a blank page if blocked
+                  try { window.close(); } catch { /* ignore */ }
+                  setTimeout(() => { try { window.history.go(-3); } catch { /* ignore */ } }, 80);
+                }}
+                variant="danger"
+                className="flex-1"
+              >
+                {t.exitNow}
+              </GlassButton>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Calendar long-press tip (first visit) */}
       {showCalendarTip && (
@@ -1537,7 +1678,7 @@ export default function DJApp() {
               occasion = getGregorianHoliday(gm, gd);
             }
             if (!occasion) return null;
-            const style = categoryStyle(occasion.category);
+            const style = categoryStyle(occasion.category, occasion.isHoliday);
             return (
               <div className={`mb-3 rounded-xl p-3 flex items-center gap-2 border ${style.chip}`}>
                 <span className="text-base">{occasion.emoji || (occasion.isHoliday ? "🔴" : "🟡")}</span>
@@ -1635,7 +1776,7 @@ export default function DJApp() {
       </div>)}
 
       {/* FAB */}
-      {!showEventModal && !showDetailModal && !showDeleteConfirm && !showResetConfirm && !showLogoutConfirm && !selectedDate && !showQRModal && !showMonthPicker && !showReminderModal && !showBankCardModal && !showShareCard && !showCardQR && !showDatePicker && !showReminderDatePicker && !shareKind && !showProfileModal && !showCalendarTip && activeTab !== "settings" && (
+      {!showEventModal && !showDetailModal && !showDeleteConfirm && !showResetConfirm && !showLogoutConfirm && !selectedDate && !showQRModal && !showMonthPicker && !showReminderModal && !showBankCardModal && !showShareCard && !showCardQR && !showDatePicker && !showReminderDatePicker && !shareKind && !showProfileModal && !showCalendarTip && !showExitConfirm && activeTab !== "settings" && (
         <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-30"><GlassButton onClick={() => openNewEventForm()} variant="primary" size="lg" className="shadow-2xl shadow-purple-500/50"><Plus size={22} className="inline ml-2" />{t.newEvent}</GlassButton></div>
       )}
 
