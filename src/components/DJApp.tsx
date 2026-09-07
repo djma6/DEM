@@ -7,7 +7,7 @@ import {
   Globe, Speaker, Lightbulb, PartyPopper, LayoutDashboard, List, Settings,
   Download, Upload, RefreshCw, User, CheckCircle, Copy, QrCode, Contact,
   Bell, Share2, Mail, CreditCard as CardIcon, LogOut, Landmark, Smartphone,
-  ChevronUp, ChevronDown, Info,
+  ChevronUp, ChevronDown, Info, UtensilsCrossed,
 } from "lucide-react";
 import { translations, type Locale } from "@/lib/i18n";
 import { toJalaali, toGregorian, jalaaliMonthLength, formatJalaaliDate, formatGregorianDate, todayJalaali } from "@/lib/jalaali";
@@ -75,10 +75,13 @@ interface BankCardData { id: number; title: string; cardNumber: string; sheba?: 
 interface CalendarDay { day: number; isToday: boolean; hasEvents: boolean; holiday: Holiday | null; gregorianHoliday: GregorianHoliday | null; jy: number; jm: number; jd: number; gy: number; gm: number; gd: number; }
 interface UserProfile { name: string; phone: string; email: string; instagram: string; }
 
-const EVENT_TYPES = ["wedding", "birthday", "conference", "concert", "corporate", "festival", "club", "private", "other"] as const;
+const EVENT_TYPES = ["wedding", "birthday", "conference", "concert", "corporate", "festival", "club", "restaurant", "private", "other"] as const;
+
+/** Event types booked through a venue rather than a private client. */
+const VENUE_TYPES = new Set(["restaurant"]);
 const STATUSES = ["confirmed", "pending", "depositPaid", "settled", "cancelled"] as const;
 const STATUS_COLORS: Record<string, string> = { confirmed: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30", pending: "bg-amber-500/20 text-amber-400 border-amber-500/30", depositPaid: "bg-blue-500/20 text-blue-400 border-blue-500/30", settled: "bg-purple-500/20 text-purple-400 border-purple-500/30", cancelled: "bg-red-500/20 text-red-400 border-red-500/30" };
-const EVENT_TYPE_ICONS: Record<string, React.ReactNode> = { wedding: <PartyPopper size={14} />, birthday: <PartyPopper size={14} />, conference: <Users size={14} />, concert: <Music size={14} />, corporate: <LayoutDashboard size={14} />, festival: <PartyPopper size={14} />, club: <Music size={14} />, private: <Users size={14} />, other: <FileText size={14} /> };
+const EVENT_TYPE_ICONS: Record<string, React.ReactNode> = { wedding: <PartyPopper size={14} />, birthday: <PartyPopper size={14} />, conference: <Users size={14} />, concert: <Music size={14} />, corporate: <LayoutDashboard size={14} />, festival: <PartyPopper size={14} />, club: <Music size={14} />, restaurant: <UtensilsCrossed size={14} />, private: <Users size={14} />, other: <FileText size={14} /> };
 
 function GlassButton({ children, onClick, variant = "default", size = "md", className = "", disabled = false, onMouseEnter, onMouseLeave, onTouchStart, onTouchEnd, onTouchCancel, onTouchMove }: { children: React.ReactNode; onClick?: () => void; variant?: "default" | "primary" | "danger" | "success"; size?: "sm" | "md" | "lg"; className?: string; disabled?: boolean; onMouseEnter?: () => void; onMouseLeave?: () => void; onTouchStart?: () => void; onTouchEnd?: () => void; onTouchCancel?: () => void; onTouchMove?: () => void; }) {
   const b = "backdrop-blur-xl border transition-all duration-300 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed";
@@ -1669,23 +1672,49 @@ export default function DJApp() {
           {/* Holiday / occasion for this date */}
           {(() => {
             if (!selectedDate) return null;
-            let occasion: Holiday | GregorianHoliday | null = null;
+            let shamsiOcc: Holiday | null = null;
+            let gregOcc: GregorianHoliday | null = null;
+
             if (selectedDate.includes("/")) {
               const [jy, jm, jd] = selectedDate.split("/").map(Number);
-              occasion = getShamsiHoliday(jm, jd, jy);
+              shamsiOcc = getShamsiHoliday(jm, jd, jy);
+              try {
+                const g = toGregorian(jy, jm, jd);
+                gregOcc = getGregorianHoliday(g.gm, g.gd);
+              } catch { /* ignore */ }
             } else {
-              const [, gm, gd] = selectedDate.split("-").map(Number);
-              occasion = getGregorianHoliday(gm, gd);
+              const [gy, gm, gd] = selectedDate.split("-").map(Number);
+              gregOcc = getGregorianHoliday(gm, gd);
+              try {
+                const j = toJalaali(gy, gm, gd);
+                shamsiOcc = getShamsiHoliday(j.jm, j.jd, j.jy);
+              } catch { /* ignore */ }
             }
-            if (!occasion) return null;
-            const style = categoryStyle(occasion.category, occasion.isHoliday);
+
+            // Show every occasion that falls on this day, days off first
+            const list = [shamsiOcc, gregOcc].filter(Boolean) as (Holiday | GregorianHoliday)[];
+            if (list.length === 0) return null;
+            list.sort((a, b) => Number(b.isHoliday) - Number(a.isHoliday));
+
             return (
-              <div className={`mb-3 rounded-xl p-3 flex items-center gap-2 border ${style.chip}`}>
-                <span className="text-base">{occasion.emoji || (occasion.isHoliday ? "🔴" : "🟡")}</span>
-                <span className="text-sm font-semibold flex-1">{locale === "fa" ? occasion.faName : occasion.enName}</span>
-                <span className={`text-[9px] px-2 py-0.5 rounded-full border ${style.chip}`}>
-                  {occasion.isHoliday ? t.holiday : t.occasion}
-                </span>
+              <div className="mb-3 space-y-2">
+                <h4 className="text-[10px] font-semibold text-gray-400 flex items-center gap-1">
+                  <Info size={11} />{t.occasionOnDate}
+                </h4>
+                {list.map((occ, i) => {
+                  const style = categoryStyle(occ.category, occ.isHoliday);
+                  return (
+                    <div key={i} className={`rounded-xl p-3 flex items-center gap-2 border ${style.chip}`}>
+                      <span className="text-base flex-shrink-0">{occ.emoji || (occ.isHoliday ? "🔴" : "🟡")}</span>
+                      <span className="text-sm font-semibold flex-1 leading-snug">
+                        {locale === "fa" ? occ.faName : occ.enName}
+                      </span>
+                      <span className={`text-[9px] px-2 py-0.5 rounded-full border flex-shrink-0 ${style.chip}`}>
+                        {occ.isHoliday ? t.holiday : t.occasion}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             );
           })()}
@@ -1709,7 +1738,7 @@ export default function DJApp() {
             <div className="flex items-center gap-3"><div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-600/40 to-red-600/40 flex items-center justify-center">{EVENT_TYPE_ICONS[selectedEvent.eventType] || <Music size={20} />}</div><div className="flex-1"><p className="text-lg font-bold text-white">{selectedEvent.title || t[selectedEvent.eventType as keyof typeof t]}</p><span className={`text-xs px-2.5 py-1 rounded-full border ${STATUS_COLORS[selectedEvent.status] || ""}`}>{t[selectedEvent.status as keyof typeof t]}</span></div></div>
             <div className="bg-white/5 backdrop-blur-xl rounded-xl p-4 space-y-2"><div className="flex items-center gap-2 text-sm"><Calendar size={14} className="text-purple-400" /><span className="text-gray-400">{t.shamsiDate}:</span><span className="text-white font-medium">{selectedEvent.shamsiDate}</span></div><div className="flex items-center gap-2 text-sm"><Calendar size={14} className="text-blue-400" /><span className="text-gray-400">{t.gregorianDate}:</span><span className="text-white font-medium">{selectedEvent.gregorianDate}</span></div></div>
             {(selectedEvent.venue || selectedEvent.location) && <div className="bg-white/5 backdrop-blur-xl rounded-xl p-4 space-y-2">{selectedEvent.venue && <div className="flex items-center gap-2 text-sm"><MapPin size={14} className="text-red-400" /><span className="text-gray-400">{t.venue}:</span><span className="text-white">{selectedEvent.venue}</span></div>}{selectedEvent.location && <div className="flex items-center gap-2 text-sm"><MapPin size={14} className="text-red-400" /><span className="text-gray-400">{t.location}:</span><span className="text-white">{selectedEvent.location}</span></div>}</div>}
-            {(selectedEvent.customerName || selectedEvent.customerPhone || selectedEvent.guestCount > 0) && <div className="bg-white/5 backdrop-blur-xl rounded-xl p-4 space-y-2">{selectedEvent.customerName && <div className="flex items-center gap-2 text-sm"><Users size={14} className="text-blue-400" /><span className="text-gray-400">{t.customerName}:</span><span className="text-white">{selectedEvent.customerName}</span></div>}{selectedEvent.customerPhone && <div className="flex items-center gap-2 text-sm"><Phone size={14} className="text-emerald-400" /><span className="text-gray-400">{t.customerPhone}:</span><span className="text-white" dir="ltr">{selectedEvent.customerPhone}</span></div>}{selectedEvent.guestCount > 0 && <div className="flex items-center gap-2 text-sm"><Users size={14} className="text-amber-400" /><span className="text-gray-400">{t.guestCount}:</span><span className="text-white">{selectedEvent.guestCount.toLocaleString()}</span></div>}</div>}
+            {(selectedEvent.customerName || selectedEvent.customerPhone || selectedEvent.guestCount > 0) && <div className="bg-white/5 backdrop-blur-xl rounded-xl p-4 space-y-2">{selectedEvent.customerName && <div className="flex items-center gap-2 text-sm"><Users size={14} className="text-blue-400" /><span className="text-gray-400">{VENUE_TYPES.has(selectedEvent.eventType) ? t.restaurantName : t.customerName}:</span><span className="text-white">{selectedEvent.customerName}</span></div>}{selectedEvent.customerPhone && <div className="flex items-center gap-2 text-sm"><Phone size={14} className="text-emerald-400" /><span className="text-gray-400">{VENUE_TYPES.has(selectedEvent.eventType) ? t.venueContact : t.customerPhone}:</span><span className="text-white" dir="ltr">{selectedEvent.customerPhone}</span></div>}{selectedEvent.guestCount > 0 && <div className="flex items-center gap-2 text-sm"><Users size={14} className="text-amber-400" /><span className="text-gray-400">{VENUE_TYPES.has(selectedEvent.eventType) ? t.restaurantCapacity : t.guestCount}:</span><span className="text-white">{selectedEvent.guestCount.toLocaleString()}</span></div>}</div>}
             <div className="bg-white/5 backdrop-blur-xl rounded-xl p-4 space-y-2"><div className="flex items-center gap-2 text-sm"><DollarSign size={14} className="text-emerald-400" /><span className="text-gray-400">{t.fee}:</span><span className="text-emerald-300 font-medium">{selectedEvent.fee.toLocaleString()}</span></div><div className="flex items-center gap-2 text-sm"><CreditCard size={14} className="text-blue-400" /><span className="text-gray-400">{t.deposit}:</span><span className="text-blue-300 font-medium">{selectedEvent.deposit.toLocaleString()}</span></div>{selectedEvent.fee - selectedEvent.deposit > 0 && <div className="flex items-center gap-2 text-sm"><AlertCircle size={14} className="text-amber-400" /><span className="text-gray-400">{t.remaining}:</span><span className="text-amber-300 font-bold">{(selectedEvent.fee - selectedEvent.deposit).toLocaleString()}</span></div>}</div>
             {(selectedEvent.soundLightProvider || selectedEvent.soundLightRequirements || selectedEvent.equipmentNeeded) && <div className="bg-white/5 backdrop-blur-xl rounded-xl p-4 space-y-2">{selectedEvent.soundLightProvider && <div className="flex items-start gap-2 text-sm"><Speaker size={14} className="text-purple-400 mt-0.5" /><span className="text-gray-400 flex-shrink-0">{t.soundLightProvider}:</span><span className="text-white">{selectedEvent.soundLightProvider}</span></div>}{selectedEvent.soundLightProviderPhone && <div className="flex items-start gap-2 text-sm"><Phone size={14} className="text-blue-400 mt-0.5" /><span className="text-gray-400 flex-shrink-0">{locale === "fa" ? "شماره تامین‌کننده" : "Provider Phone"}:</span><span className="text-white" dir="ltr">{selectedEvent.soundLightProviderPhone}</span></div>}{selectedEvent.soundLightRequirements && <div className="flex items-start gap-2 text-sm"><Lightbulb size={14} className="text-amber-400 mt-0.5" /><span className="text-gray-400 flex-shrink-0">{t.soundLightRequirements}:</span><span className="text-white">{selectedEvent.soundLightRequirements}</span></div>}{selectedEvent.equipmentNeeded && <div className="flex items-start gap-2 text-sm"><Music size={14} className="text-red-400 mt-0.5" /><span className="text-gray-400 flex-shrink-0">{t.equipmentNeeded}:</span><span className="text-white">{selectedEvent.equipmentNeeded}</span></div>}</div>}
             {selectedEvent.description && <div className="bg-white/5 backdrop-blur-xl rounded-xl p-4"><div className="flex items-start gap-2 text-sm"><FileText size={14} className="text-gray-400 mt-0.5" /><p className="text-gray-300 whitespace-pre-wrap">{selectedEvent.description}</p></div></div>}
@@ -1745,7 +1774,56 @@ export default function DJApp() {
 </div>
 <div><label className={lc}>{t.shamsiDate} <span className="text-[9px] text-purple-400">★</span></label><input type="text" value={formData.shamsiDate} onChange={e => handleShamsiDateChange(e.target.value)} className={ic} placeholder="1404/03/15" dir="ltr" inputMode="numeric" /></div>
 <div><label className={lc}>{t.gregorianDate}</label><input type="text" value={formData.gregorianDate} onChange={e => handleGregorianDateChange(e.target.value)} className={ic} placeholder="2025-06-05" dir="ltr" inputMode="numeric" /></div><div><label className={lc}>{t.venue}</label><input type="text" value={formData.venue} onChange={e => setFormData(p => ({ ...p, venue: e.target.value }))} className={ic} placeholder={locale === "fa" ? "محل برگزاری" : "Venue"} /></div><div><label className={lc}>{t.location}</label><input type="text" value={formData.location} onChange={e => setFormData(p => ({ ...p, location: e.target.value }))} className={ic} placeholder={locale === "fa" ? "آدرس" : "Address"} /></div><div><label className={lc}>{t.status}</label><select value={formData.status} onChange={e => setFormData(p => ({ ...p, status: e.target.value }))} className={sc}>{STATUSES.map(s => <option key={s} value={s}>{t[s as keyof typeof t]}</option>)}</select></div></>)}
-            {formStep === 1 && (<><div><label className={lc}>{t.customerName}</label><input type="text" value={formData.customerName} onChange={e => setFormData(p => ({ ...p, customerName: e.target.value }))} className={ic} placeholder={locale === "fa" ? "نام مشتری" : "Customer name"} /></div><div><label className={lc}>{t.customerPhone}</label><div className="flex gap-2"><input type="tel" value={formData.customerPhone} onChange={e => setFormData(p => ({ ...p, customerPhone: e.target.value }))} className={ic} placeholder="09123456789" dir="ltr" /><GlassButton onClick={() => handleContactPicker("customer")} size="md"><Contact size={18} /></GlassButton></div></div><div><label className={lc}>{t.guestCount}</label><input type="number" value={formData.guestCount || ""} onChange={e => setFormData(p => ({ ...p, guestCount: parseInt(e.target.value) || 0 }))} className={ic} placeholder={locale === "fa" ? "تعداد مهمان" : "Guest count"} dir="ltr" /></div></>)}
+            {formStep === 1 && (() => {
+              // Restaurant/cafe bookings ask for the venue, not a private client
+              const isVenue = VENUE_TYPES.has(formData.eventType);
+              return (
+                <>
+                  <div>
+                    <label className={lc}>{isVenue ? t.restaurantName : t.customerName}</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={formData.customerName}
+                        onChange={e => setFormData(p => ({ ...p, customerName: e.target.value }))}
+                        className={ic}
+                        placeholder={isVenue ? t.restaurantName : (locale === "fa" ? "نام مشتری" : "Customer name")}
+                      />
+                      {!isVenue && (
+                        <GlassButton onClick={() => handleContactPicker("customer")} size="md"><Contact size={18} /></GlassButton>
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <label className={lc}>{isVenue ? t.venueContact : t.customerPhone}</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="tel"
+                        value={formData.customerPhone}
+                        onChange={e => setFormData(p => ({ ...p, customerPhone: e.target.value }))}
+                        className={ic}
+                        placeholder="09123456789"
+                        dir="ltr"
+                        inputMode="tel"
+                      />
+                      <GlassButton onClick={() => handleContactPicker("customer")} size="md"><Contact size={18} /></GlassButton>
+                    </div>
+                  </div>
+                  <div>
+                    <label className={lc}>{isVenue ? t.restaurantCapacity : t.guestCount}</label>
+                    <input
+                      type="number"
+                      value={formData.guestCount || ""}
+                      onChange={e => setFormData(p => ({ ...p, guestCount: parseInt(e.target.value) || 0 }))}
+                      className={ic}
+                      placeholder={isVenue ? t.restaurantCapacity : (locale === "fa" ? "تعداد مهمان" : "Guest count")}
+                      dir="ltr"
+                      inputMode="numeric"
+                    />
+                  </div>
+                </>
+              );
+            })()}
             {formStep === 2 && (<><div><label className={lc}>{t.fee}</label><input type="number" value={formData.fee || ""} onChange={e => setFormData(p => ({ ...p, fee: parseInt(e.target.value) || 0 }))} className={ic} placeholder={locale === "fa" ? "مبلغ (تومان)" : "Fee (Toman)"} dir="ltr" /></div><div><label className={lc}>{t.deposit}</label><input type="number" value={formData.deposit || ""} onChange={e => setFormData(p => ({ ...p, deposit: parseInt(e.target.value) || 0 }))} className={ic} placeholder={locale === "fa" ? "بیعانه (تومان)" : "Deposit (Toman)"} dir="ltr" /></div><div className="bg-amber-500/10 backdrop-blur-xl border border-amber-500/20 rounded-xl p-4"><div className="flex items-center gap-2 text-sm"><AlertCircle size={14} className="text-amber-400" /><span className="text-amber-300">{t.remaining}:</span><span className="text-amber-200 font-bold">{(formData.fee - formData.deposit).toLocaleString()} {locale === "fa" ? "تومان" : "Toman"}</span></div></div></>)}
             {formStep === 3 && (<>
               {/* Toggle */}
@@ -1765,7 +1843,7 @@ export default function DJApp() {
               </>)}
               {!formData.soundLightEnabled && (<div className="text-center py-6"><Speaker size={32} className="mx-auto mb-2 text-gray-600" /><p className="text-xs text-gray-500">{locale === "fa" ? "این برنامه نیاز به تامین‌کننده صوت و نور ندارد" : "This event doesn't need sound & light provider"}</p></div>)}
             </>)}
-            {formStep === 4 && (<><div><label className={lc}>{t.description}</label><textarea value={formData.description} onChange={e => setFormData(p => ({ ...p, description: e.target.value }))} className={`${ic} min-h-[200px] resize-none`} placeholder={locale === "fa" ? "توضیحات..." : "Notes..."} /></div><div className="bg-white/5 backdrop-blur-xl rounded-xl p-4 space-y-2"><h4 className="text-sm font-bold text-purple-300 mb-3">{locale === "fa" ? "خلاصه" : "Summary"}</h4><div className="flex justify-between text-xs"><span className="text-gray-400">{t.eventType}:</span><span className="text-white">{t[formData.eventType as keyof typeof t]}</span></div><div className="flex justify-between text-xs"><span className="text-gray-400">{t.shamsiDate}:</span><span className="text-white" dir="ltr">{formData.shamsiDate}</span></div>{formData.venue && <div className="flex justify-between text-xs"><span className="text-gray-400">{t.venue}:</span><span className="text-white">{formData.venue}</span></div>}{formData.customerName && <div className="flex justify-between text-xs"><span className="text-gray-400">{t.customerName}:</span><span className="text-white">{formData.customerName}</span></div>}<div className="flex justify-between text-xs"><span className="text-gray-400">{t.fee}:</span><span className="text-emerald-300">{formData.fee.toLocaleString()}</span></div><div className="flex justify-between text-xs"><span className="text-gray-400">{t.status}:</span><span className={`px-2 py-0.5 rounded-full text-[10px] border ${STATUS_COLORS[formData.status] || ""}`}>{t[formData.status as keyof typeof t]}</span></div></div></>)}
+            {formStep === 4 && (<><div><label className={lc}>{t.description}</label><textarea value={formData.description} onChange={e => setFormData(p => ({ ...p, description: e.target.value }))} className={`${ic} min-h-[200px] resize-none`} placeholder={locale === "fa" ? "توضیحات..." : "Notes..."} /></div><div className="bg-white/5 backdrop-blur-xl rounded-xl p-4 space-y-2"><h4 className="text-sm font-bold text-purple-300 mb-3">{locale === "fa" ? "خلاصه" : "Summary"}</h4><div className="flex justify-between text-xs"><span className="text-gray-400">{t.eventType}:</span><span className="text-white">{t[formData.eventType as keyof typeof t]}</span></div><div className="flex justify-between text-xs"><span className="text-gray-400">{t.shamsiDate}:</span><span className="text-white" dir="ltr">{formData.shamsiDate}</span></div>{formData.venue && <div className="flex justify-between text-xs"><span className="text-gray-400">{t.venue}:</span><span className="text-white">{formData.venue}</span></div>}{formData.customerName && <div className="flex justify-between text-xs"><span className="text-gray-400">{VENUE_TYPES.has(formData.eventType) ? t.restaurantName : t.customerName}:</span><span className="text-white">{formData.customerName}</span></div>}<div className="flex justify-between text-xs"><span className="text-gray-400">{t.fee}:</span><span className="text-emerald-300">{formData.fee.toLocaleString()}</span></div><div className="flex justify-between text-xs"><span className="text-gray-400">{t.status}:</span><span className={`px-2 py-0.5 rounded-full text-[10px] border ${STATUS_COLORS[formData.status] || ""}`}>{t[formData.status as keyof typeof t]}</span></div></div></>)}
           </div>
           <div className="sticky bottom-0 bg-[#1a1a2e]/90 backdrop-blur-xl border-t border-white/5 p-4 flex gap-3">
             <GlassButton onClick={() => { setShowEventModal(false); setEditingEvent(null); }} className="flex-1"><ChevronRight size={16} className="inline ml-1" />{locale === "fa" ? "بازگشت" : "Back"}</GlassButton>
@@ -1796,24 +1874,135 @@ export default function DJApp() {
 function DashboardClock({ locale, t }: { locale: Locale; t: (typeof translations.fa) | (typeof translations.en); }) {
   const [now, setNow] = useState(new Date());
   useEffect(() => { const id = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(id); }, []);
+
   const jt = toJalaali(now.getFullYear(), now.getMonth() + 1, now.getDate());
   const shamsiStr = formatJalaaliDate(jt.jy, jt.jm, jt.jd);
   const gregorianStr = formatGregorianDate(now.getFullYear(), now.getMonth() + 1, now.getDate());
-  const dayOfWeekShamsi = locale === "fa" ? ["شنبه", "یکشنبه", "دوشنبه", "سه‌شنبه", "چهارشنبه", "پنجشنبه", "جمعه"] : ["Saturday", "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+  const dayOfWeekShamsi = locale === "fa"
+    ? ["شنبه", "یکشنبه", "دوشنبه", "سه‌شنبه", "چهارشنبه", "پنجشنبه", "جمعه"]
+    : ["Saturday", "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
   const dayName = dayOfWeekShamsi[(now.getDay() + 1) % 7];
-  const hours = String(now.getHours()).padStart(2, "0");
+
+  const h = now.getHours();
+  const hours = String(h).padStart(2, "0");
   const minutes = String(now.getMinutes()).padStart(2, "0");
   const seconds = String(now.getSeconds()).padStart(2, "0");
 
+  // Daytime runs 06:00 → 17:59; the sky, sun and moon animate accordingly.
+  const isDay = h >= 6 && h < 18;
+  // Progress through the current day/night span, used to arc the sun/moon.
+  const spanStart = isDay ? 6 : (h >= 18 ? 18 : -6);
+  const progress = Math.min(1, Math.max(0, (h + now.getMinutes() / 60 - spanStart) / 12));
+  const arcX = 8 + progress * 84;              // 8% → 92% across the badge
+  const arcY = 52 - Math.sin(progress * Math.PI) * 34; // gentle rise and fall
+
+  const skyClass = isDay
+    ? "from-sky-500/25 via-amber-400/12 to-orange-400/15"
+    : "from-indigo-950/60 via-[#12122b] to-purple-950/50";
+
   return (
     <section className="mt-4">
-      <div className="bg-gradient-to-br from-purple-900/50 via-[#1a1a2e] to-red-900/30 backdrop-blur-xl border border-purple-500/20 rounded-3xl p-5 text-center">
-        <p className="text-5xl font-extralight tracking-widest text-white mb-1" dir="ltr">{hours}<span className="text-purple-400 animate-pulse">:</span>{minutes}<span className="text-purple-400/50 text-3xl">:{seconds}</span></p>
+      <div className={`relative overflow-hidden bg-gradient-to-br ${skyClass} backdrop-blur-xl border border-purple-500/20 rounded-3xl p-5 text-center transition-all duration-1000`}>
+
+        {/* ── Animated day / night badge (top-left) ── */}
+        <div
+          className={`absolute top-3 left-3 w-24 h-14 rounded-2xl overflow-hidden border transition-all duration-1000 ${
+            isDay
+              ? "bg-gradient-to-b from-sky-400/35 to-amber-300/20 border-amber-300/40"
+              : "bg-gradient-to-b from-indigo-950/80 to-slate-900/70 border-indigo-400/30"
+          }`}
+          title={isDay ? (locale === "fa" ? "روز" : "Day") : (locale === "fa" ? "شب" : "Night")}
+        >
+          {/* Stars — night only */}
+          <div className={`absolute inset-0 transition-opacity duration-1000 ${isDay ? "opacity-0" : "opacity-100"}`}>
+            {[
+              { l: "16%", tp: "26%", d: "0s", s: 1.5 },
+              { l: "34%", tp: "56%", d: "0.6s", s: 1 },
+              { l: "58%", tp: "22%", d: "1.2s", s: 1.5 },
+              { l: "74%", tp: "62%", d: "0.3s", s: 1 },
+              { l: "88%", tp: "36%", d: "0.9s", s: 1 },
+            ].map((st, i) => (
+              <span
+                key={i}
+                className="absolute rounded-full bg-white animate-pulse"
+                style={{
+                  left: st.l,
+                  top: st.tp,
+                  width: `${st.s}px`,
+                  height: `${st.s}px`,
+                  animationDelay: st.d,
+                  animationDuration: "2.4s",
+                }}
+              />
+            ))}
+          </div>
+
+          {/* Sun */}
+          <div
+            className="absolute transition-all duration-1000 ease-out"
+            style={{
+              left: `${arcX}%`,
+              top: `${arcY}%`,
+              transform: "translate(-50%, -50%)",
+              opacity: isDay ? 1 : 0,
+              scale: isDay ? "1" : "0.4",
+            }}
+          >
+            <div className="relative">
+              <div className="absolute inset-0 rounded-full bg-amber-300/50 blur-md scale-[2.2] animate-pulse" style={{ animationDuration: "3s" }} />
+              <div className="relative w-5 h-5 rounded-full bg-gradient-to-br from-yellow-200 via-amber-300 to-orange-400 shadow-lg shadow-amber-400/50" />
+            </div>
+          </div>
+
+          {/* Moon */}
+          <div
+            className="absolute transition-all duration-1000 ease-out"
+            style={{
+              left: `${arcX}%`,
+              top: `${arcY}%`,
+              transform: "translate(-50%, -50%)",
+              opacity: isDay ? 0 : 1,
+              scale: isDay ? "0.4" : "1",
+            }}
+          >
+            <div className="relative">
+              <div className="absolute inset-0 rounded-full bg-indigo-200/35 blur-md scale-[2] animate-pulse" style={{ animationDuration: "4s" }} />
+              <div className="relative w-4 h-4 rounded-full bg-gradient-to-br from-slate-100 to-slate-300 shadow-lg shadow-indigo-300/40">
+                {/* Crescent shadow */}
+                <div className={`absolute -top-0.5 -right-1 w-4 h-4 rounded-full transition-colors duration-1000 ${isDay ? "bg-transparent" : "bg-[#141432]"}`} />
+              </div>
+            </div>
+          </div>
+
+          {/* Horizon glow */}
+          <div
+            className={`absolute bottom-0 inset-x-0 h-3 transition-all duration-1000 ${
+              isDay ? "bg-gradient-to-t from-amber-300/30 to-transparent" : "bg-gradient-to-t from-purple-500/20 to-transparent"
+            }`}
+          />
+        </div>
+
+        {/* ── Time ── */}
+        <p className="text-5xl font-extralight tracking-widest text-white mb-1 mt-1" dir="ltr">
+          {hours}
+          <span className="text-purple-400 animate-pulse">:</span>
+          {minutes}
+          <span className="text-purple-400/50 text-3xl">:{seconds}</span>
+        </p>
         <p className="text-sm font-semibold text-purple-300 mb-2">{dayName}</p>
+
         <div className="flex items-center justify-center gap-4">
-          <div className="flex items-center gap-1.5"><Calendar size={12} className="text-purple-400" /><span className="text-xs text-purple-200" dir="ltr">{shamsiStr}</span><span className="text-[9px] text-purple-500">{locale === "fa" ? "شمسی" : "SH"}</span></div>
+          <div className="flex items-center gap-1.5">
+            <Calendar size={12} className="text-purple-400" />
+            <span className="text-xs text-purple-200" dir="ltr">{shamsiStr}</span>
+            <span className="text-[9px] text-purple-500">{locale === "fa" ? "شمسی" : "SH"}</span>
+          </div>
           <div className="w-px h-3 bg-purple-500/30" />
-          <div className="flex items-center gap-1.5"><Calendar size={12} className="text-blue-400" /><span className="text-xs text-blue-200" dir="ltr">{gregorianStr}</span><span className="text-[9px] text-blue-500">{locale === "fa" ? "میلادی" : "GR"}</span></div>
+          <div className="flex items-center gap-1.5">
+            <Calendar size={12} className="text-blue-400" />
+            <span className="text-xs text-blue-200" dir="ltr">{gregorianStr}</span>
+            <span className="text-[9px] text-blue-500">{locale === "fa" ? "میلادی" : "GR"}</span>
+          </div>
         </div>
       </div>
     </section>
