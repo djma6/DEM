@@ -56,7 +56,13 @@ import {
   ProviderFormModal, ProviderPickerModal, EMPTY_PROVIDER, type ProviderDraft,
 } from "./RosterSections";
 import DirectorySection from "./DirectorySection";
+import { ProviderLinesEditor, MusicianLinesEditor, ColleagueLinesEditor } from "./EventLineEditors";
+import {
+  readMusicianLines, readProviderLines, readColleagueLines, serialiseLines,
+  type MusicianLine, type ProviderLine, type ColleagueLine,
+} from "@/lib/eventLines";
 import { ColleagueFormModal, ColleaguePickerModal, EMPTY_COLLEAGUE, roleLabel, type ColleagueDraft } from "./ColleagueParts";
+import { equipmentLabel } from "./RosterSections";
 import {
   loadProfile,
   saveProfile,
@@ -96,7 +102,7 @@ import {
 } from "@/lib/localStore";
 
 // ── Types ──
-interface EventData { id: number; eventType: string; title: string | null; shamsiDate: string; gregorianDate: string; venue: string | null; location: string | null; fee: number; deposit: number; equipmentNeeded: string | null; soundLightProvider: string | null; soundLightProviderPhone: string | null; soundLightRequirements: string | null; soundLightCost: number; musicianName: string | null; musicianInstrument: string | null; musicianPhone: string | null; musicianFee: number; colleagueName: string | null; colleagueRole: string | null; colleaguePhone: string | null; colleagueFee: number; description: string | null; customerName: string | null; customerPhone: string | null; guestCount: number; status: string; createdAt: string | null; updatedAt: string | null; }
+interface EventData { id: number; eventType: string; title: string | null; shamsiDate: string; gregorianDate: string; venue: string | null; location: string | null; fee: number; deposit: number; equipmentNeeded: string | null; soundLightProvider: string | null; soundLightProviderPhone: string | null; soundLightRequirements: string | null; soundLightCost: number; musicianName: string | null; musicianInstrument: string | null; musicianPhone: string | null; musicianFee: number; colleagueName: string | null; colleagueRole: string | null; colleaguePhone: string | null; colleagueFee: number; musiciansJson: string | null; providersJson: string | null; colleaguesJson: string | null; description: string | null; customerName: string | null; customerPhone: string | null; guestCount: number; status: string; createdAt: string | null; updatedAt: string | null; }
 interface Stats { totalEvents: number; unsettledEvents: number; totalRevenue: number; upcomingCount: number; upcomingEvents: EventData[]; }
 interface ReminderData { id: number; title: string; shamsiDate: string; gregorianDate: string; time: string | null; notifyBefore: string | null; contactName: string | null; contactPhone: string | null; description: string | null; completed: number; }
 interface BankCardData { id: number; title: string; cardNumber: string; sheba?: string; }
@@ -221,6 +227,11 @@ export default function DJApp() {
   const [showColleaguePicker, setShowColleaguePicker] = useState(false);
   const [colleagueDraft, setColleagueDraft] = useState<ColleagueDraft>(EMPTY_COLLEAGUE);
   const [editingColleagueId, setEditingColleagueId] = useState<number | null>(null);
+  // Line items on the event being edited (an event may have several of each)
+  const [providerLines, setProviderLines] = useState<ProviderLine[]>([]);
+  const [musicianLines, setMusicianLines] = useState<MusicianLine[]>([]);
+  const [colleagueLines, setColleagueLines] = useState<ColleagueLine[]>([]);
+  const [lineContactTarget, setLineContactTarget] = useState<{ kind: "musician" | "colleague"; index: number } | null>(null);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressFired = useRef(false);
 
@@ -264,7 +275,7 @@ export default function DJApp() {
   const [holidayTooltip, setHolidayTooltip] = useState<{ name: string; isHoliday: boolean } | null>(null);
   const [reminderDate, setReminderDate] = useState<string>("");
 
-  const [formData, setFormData] = useState({ eventType: "wedding", title: "", shamsiDate: "", gregorianDate: "", venue: "", location: "", fee: 0, deposit: 0, equipmentNeeded: "", soundLightProvider: "", soundLightProviderPhone: "", soundLightRequirements: "", soundLightCost: 0, soundLightEnabled: false, musicianEnabled: false, musicianName: "", musicianInstrument: "", musicianPhone: "", musicianFee: 0, colleagueEnabled: false, colleagueName: "", colleagueRole: "dj", colleaguePhone: "", colleagueFee: 0, description: "", customerName: "", customerPhone: "", guestCount: 0, status: "pending" });
+  const [formData, setFormData] = useState({ eventType: "wedding", title: "", shamsiDate: "", gregorianDate: "", venue: "", location: "", fee: 0, deposit: 0, equipmentNeeded: "", soundLightProvider: "", soundLightProviderPhone: "", soundLightRequirements: "", soundLightCost: 0, soundLightEnabled: false, musicianEnabled: false, colleagueEnabled: false, description: "", customerName: "", customerPhone: "", guestCount: 0, status: "pending" });
   const [reminderForm, setReminderForm] = useState({ title: "", shamsiDate: "", gregorianDate: "", time: "", notifyBefore: "0", contactName: "", contactPhone: "", description: "" });
   const [bankCardForm, setBankCardForm] = useState({ title: "", cardNumber: "", sheba: "" });
 
@@ -694,14 +705,15 @@ export default function DJApp() {
   const getMonthEvents = (): EventData[] => { const evList = Array.isArray(events) ? events : []; if (calendarType === "shamsi") { const p = `${shamsiMonth.year}/${String(shamsiMonth.month).padStart(2, "0")}/`; return evList.filter(e => e.shamsiDate.startsWith(p) && e.status !== "cancelled").sort((a, b) => a.shamsiDate.localeCompare(b.shamsiDate)); } else { const p = `${gregMonth.year}-${String(gregMonth.month).padStart(2, "0")}-`; return evList.filter(e => e.gregorianDate.startsWith(p) && e.status !== "cancelled").sort((a, b) => a.gregorianDate.localeCompare(b.gregorianDate)); } };
 
   // Form
-  const openNewEventForm = (date?: string) => { setEditingEvent(null); const sd = date || todayStr; const p = sd.split("/"); const g = toGregorian(parseInt(p[0]), parseInt(p[1]), parseInt(p[2])); setFormData({ eventType: "wedding", title: "", shamsiDate: sd, gregorianDate: formatGregorianDate(g.gy, g.gm, g.gd), venue: "", location: "", fee: 0, deposit: 0, equipmentNeeded: "", soundLightProvider: "", soundLightProviderPhone: "", soundLightRequirements: "", soundLightCost: 0, soundLightEnabled: false, musicianEnabled: false, musicianName: "", musicianInstrument: "", musicianPhone: "", musicianFee: 0, colleagueEnabled: false, colleagueName: "", colleagueRole: "dj", colleaguePhone: "", colleagueFee: 0, description: "", customerName: "", customerPhone: "", guestCount: 0, status: "pending" }); setFormStep(0); setShowEventModal(true); };
+  const openNewEventForm = (date?: string) => { setEditingEvent(null); const sd = date || todayStr; const p = sd.split("/"); const g = toGregorian(parseInt(p[0]), parseInt(p[1]), parseInt(p[2])); setFormData({ eventType: "wedding", title: "", shamsiDate: sd, gregorianDate: formatGregorianDate(g.gy, g.gm, g.gd), venue: "", location: "", fee: 0, deposit: 0, equipmentNeeded: "", soundLightProvider: "", soundLightProviderPhone: "", soundLightRequirements: "", soundLightCost: 0, soundLightEnabled: false, musicianEnabled: false, colleagueEnabled: false, description: "", customerName: "", customerPhone: "", guestCount: 0, status: "pending" }); setProviderLines([]); setMusicianLines([]); setColleagueLines([]);
+    setFormStep(0); setShowEventModal(true); };
   const openEditEventForm = (ev: EventData) => { setEditingEvent(ev); setFormData({ eventType: ev.eventType, title: ev.title || "", shamsiDate: ev.shamsiDate, gregorianDate: ev.gregorianDate, venue: ev.venue || "", location: ev.location || "", fee: ev.fee, deposit: ev.deposit, equipmentNeeded: ev.equipmentNeeded || "", soundLightProvider: ev.soundLightProvider || "", soundLightProviderPhone: "", soundLightRequirements: ev.soundLightRequirements || "", soundLightCost: ev.soundLightCost, soundLightEnabled: !!(ev.soundLightProvider || ev.soundLightRequirements || ev.soundLightCost),
-      musicianEnabled: !!(ev.musicianName || ev.musicianInstrument || ev.musicianFee),
-      musicianName: ev.musicianName || "", musicianInstrument: ev.musicianInstrument || "",
-      musicianPhone: ev.musicianPhone || "", musicianFee: ev.musicianFee || 0,
-      colleagueEnabled: !!(ev.colleagueName || ev.colleagueFee),
-      colleagueName: ev.colleagueName || "", colleagueRole: ev.colleagueRole || "dj",
-      colleaguePhone: ev.colleaguePhone || "", colleagueFee: ev.colleagueFee || 0, description: ev.description || "", customerName: ev.customerName || "", customerPhone: ev.customerPhone || "", guestCount: ev.guestCount || 0, status: ev.status }); setFormStep(0); setShowEventModal(true); };
+      musicianEnabled: readMusicianLines(ev).length > 0,
+      colleagueEnabled: readColleagueLines(ev).length > 0, description: ev.description || "", customerName: ev.customerName || "", customerPhone: ev.customerPhone || "", guestCount: ev.guestCount || 0, status: ev.status });
+    setProviderLines(readProviderLines(ev));
+    setMusicianLines(readMusicianLines(ev));
+    setColleagueLines(readColleagueLines(ev));
+    setFormStep(0); setShowEventModal(true); };
   // Shamsi → Gregorian (auto-sync)
   const handleShamsiDateChange = (val: string) => {
     const norm = val.replace(/[-.]/g, "/").replace(/[^\d/]/g, "");
@@ -757,22 +769,32 @@ export default function DJApp() {
         payload.soundLightRequirements = "";
         payload.soundLightCost = 0;
       }
-      if (!formData.musicianEnabled) {
-        payload.musicianName = "";
-        payload.musicianInstrument = "";
-        payload.musicianPhone = "";
-        payload.musicianFee = 0;
-      } else {
-        payload.musicianFee = Number(formData.musicianFee) || 0;
-      }
-      if (!formData.colleagueEnabled) {
-        payload.colleagueName = "";
-        payload.colleagueRole = "";
-        payload.colleaguePhone = "";
-        payload.colleagueFee = 0;
-      } else {
-        payload.colleagueFee = Number(formData.colleagueFee) || 0;
-      }
+      // Only keep the rows whose section is switched on
+      const activeProviders = formData.soundLightEnabled ? providerLines : [];
+      const activeMusicians = formData.musicianEnabled ? musicianLines : [];
+      const activeColleagues = formData.colleagueEnabled ? colleagueLines : [];
+
+      payload.providersJson = serialiseLines(activeProviders);
+      payload.musiciansJson = serialiseLines(activeMusicians);
+      payload.colleaguesJson = serialiseLines(activeColleagues);
+
+      // Mirror the first row into the legacy columns for older readers
+      const firstProvider = activeProviders.find(l => l.name.trim());
+      payload.soundLightProvider = firstProvider?.name || "";
+      payload.soundLightProviderPhone = firstProvider?.phone || "";
+      payload.soundLightCost = activeProviders.reduce((sum, l) => sum + (Number(l.cost) || 0), 0);
+
+      const firstMusician = activeMusicians.find(l => l.name.trim());
+      payload.musicianName = firstMusician?.name || "";
+      payload.musicianInstrument = firstMusician?.instrument || "";
+      payload.musicianPhone = firstMusician?.phone || "";
+      payload.musicianFee = activeMusicians.reduce((sum, l) => sum + (Number(l.fee) || 0), 0);
+
+      const firstColleague = activeColleagues.find(l => l.name.trim());
+      payload.colleagueName = firstColleague?.name || "";
+      payload.colleagueRole = firstColleague?.role || "";
+      payload.colleaguePhone = firstColleague?.phone || "";
+      payload.colleagueFee = activeColleagues.reduce((sum, l) => sum + (Number(l.fee) || 0), 0);
 
       const wasEditingId = editingEvent?.id;
 
@@ -833,7 +855,13 @@ export default function DJApp() {
   };
   const handleReset = async () => { try { await fetch("/api/reset", { method: "DELETE" }); localStorage.clear(); setShowResetConfirm(false); window.location.reload(); } catch (e) { console.error(e); } };
 
-  const handleContactPicker = async (target: "customer" | "provider" | "reminder" | "musician" | "colleague") => { try { if ("contacts" in navigator) { const c = await (navigator as any).contacts.select(["name", "tel"], { multiple: false }); if (c.length > 0) { const name = c[0].name?.[0] || ""; const tel = c[0].tel?.[0] || ""; if (target === "customer") setFormData(p => ({ ...p, customerName: name || p.customerName, customerPhone: tel || p.customerPhone })); else if (target === "provider") setFormData(p => ({ ...p, soundLightProvider: name || p.soundLightProvider, soundLightProviderPhone: tel || p.soundLightProviderPhone })); else if (target === "reminder") setReminderForm(p => ({ ...p, contactName: name || p.contactName, contactPhone: tel || p.contactPhone })); else if (target === "musician") setFormData(p => ({ ...p, musicianName: name || p.musicianName, musicianPhone: tel || p.musicianPhone })); else if (target === "colleague") setFormData(p => ({ ...p, colleagueName: name || p.colleagueName, colleaguePhone: tel || p.colleaguePhone })); } } else alert(t.contactPickerNotSupported); } catch { alert(t.contactPickerFailed); } };
+  const handleContactPicker = async (target: "customer" | "provider" | "reminder" | "musician" | "colleague") => { try { if ("contacts" in navigator) { const c = await (navigator as any).contacts.select(["name", "tel"], { multiple: false }); if (c.length > 0) { const name = c[0].name?.[0] || ""; const tel = c[0].tel?.[0] || ""; if (target === "customer") setFormData(p => ({ ...p, customerName: name || p.customerName, customerPhone: tel || p.customerPhone })); else if (target === "provider") setFormData(p => ({ ...p, soundLightProvider: name || p.soundLightProvider, soundLightProviderPhone: tel || p.soundLightProviderPhone })); else if (target === "reminder") setReminderForm(p => ({ ...p, contactName: name || p.contactName, contactPhone: tel || p.contactPhone })); else if (target === "musician" && lineContactTarget?.kind === "musician") {
+        const i = lineContactTarget.index;
+        setMusicianLines(rows => rows.map((r, idx) => idx === i ? { ...r, name: name || r.name, phone: tel || r.phone } : r));
+      } else if (target === "colleague" && lineContactTarget?.kind === "colleague") {
+        const i = lineContactTarget.index;
+        setColleagueLines(rows => rows.map((r, idx) => idx === i ? { ...r, name: name || r.name, phone: tel || r.phone } : r));
+      } } } else alert(t.contactPickerNotSupported); } catch { alert(t.contactPickerFailed); } };
 
   // Reminder
   const openReminderForm = (dateStr: string) => {
@@ -1186,14 +1214,12 @@ export default function DJApp() {
 
   /** Fills the event form from a saved musician. */
   const applyMusicianToEvent = (m: LocalMusician) => {
-    setFormData(p => ({
-      ...p,
-      musicianEnabled: true,
-      musicianName: m.fullName,
-      musicianInstrument: m.instrument,
-      musicianPhone: m.phone,
-      musicianFee: m.fee || 0,
-    }));
+    setMusicianLines(rows => [...rows, {
+      name: m.fullName,
+      instrument: m.instrument,
+      phone: m.phone,
+      fee: m.fee || 0,
+    }]);
   };
 
   /* ── Sound & light providers ── */
@@ -1245,12 +1271,12 @@ export default function DJApp() {
 
   /** Fills the event form from a saved sound & light provider. */
   const applyProviderToEvent = (pv: LocalSoundProvider) => {
-    setFormData(p => ({
-      ...p,
-      soundLightEnabled: true,
-      soundLightProvider: pv.name,
-      soundLightProviderPhone: pv.phone,
-    }));
+    setProviderLines(rows => [...rows, {
+      name: pv.name,
+      phone: pv.phone,
+      service: pv.equipment || "soundLight",
+      cost: 0,
+    }]);
   };
 
   /** Shared contacts picker for the roster forms. */
@@ -1328,14 +1354,12 @@ export default function DJApp() {
 
   /** Fills the event form from a saved colleague. */
   const applyColleagueToEvent = (c: LocalColleague) => {
-    setFormData(p => ({
-      ...p,
-      colleagueEnabled: true,
-      colleagueName: c.fullName,
-      colleagueRole: c.role,
-      colleaguePhone: c.phone,
-      colleagueFee: c.fee || 0,
-    }));
+    setColleagueLines(rows => [...rows, {
+      name: c.fullName,
+      role: c.role,
+      phone: c.phone,
+      fee: c.fee || 0,
+    }]);
   };
 
   // Bank cards + Sheba live only on this device (never uploaded anywhere)
@@ -2311,71 +2335,77 @@ export default function DJApp() {
             {(selectedEvent.venue || selectedEvent.location) && <div className="bg-white/5 backdrop-blur-xl rounded-xl p-4 space-y-2">{selectedEvent.venue && <div className="flex items-center gap-2 text-sm"><MapPin size={14} className="text-red-400" /><span className="text-gray-400">{t.venue}:</span><span className="text-white">{selectedEvent.venue}</span></div>}{selectedEvent.location && <div className="flex items-center gap-2 text-sm"><MapPin size={14} className="text-red-400" /><span className="text-gray-400">{t.location}:</span><span className="text-white">{selectedEvent.location}</span></div>}</div>}
             {(selectedEvent.customerName || selectedEvent.customerPhone || selectedEvent.guestCount > 0) && <div className="bg-white/5 backdrop-blur-xl rounded-xl p-4 space-y-2">{selectedEvent.customerName && <div className="flex items-center gap-2 text-sm"><Users size={14} className="text-blue-400" /><span className="text-gray-400">{VENUE_TYPES.has(selectedEvent.eventType) ? t.restaurantName : t.customerName}:</span><span className="text-white">{selectedEvent.customerName}</span></div>}{selectedEvent.customerPhone && <div className="flex items-center gap-2 text-sm"><Phone size={14} className="text-emerald-400" /><span className="text-gray-400">{VENUE_TYPES.has(selectedEvent.eventType) ? t.venueContact : t.customerPhone}:</span><span className="text-white" dir="ltr">{selectedEvent.customerPhone}</span></div>}{selectedEvent.guestCount > 0 && <div className="flex items-center gap-2 text-sm"><Users size={14} className="text-amber-400" /><span className="text-gray-400">{VENUE_TYPES.has(selectedEvent.eventType) ? t.restaurantCapacity : t.guestCount}:</span><span className="text-white">{selectedEvent.guestCount.toLocaleString()}</span></div>}</div>}
             <div className="bg-white/5 backdrop-blur-xl rounded-xl p-4 space-y-2"><div className="flex items-center gap-2 text-sm"><DollarSign size={14} className="text-emerald-400" /><span className="text-gray-400">{t.fee}:</span><span className="text-emerald-300 font-medium">{selectedEvent.fee.toLocaleString()}</span></div><div className="flex items-center gap-2 text-sm"><CreditCard size={14} className="text-blue-400" /><span className="text-gray-400">{t.deposit}:</span><span className="text-blue-300 font-medium">{selectedEvent.deposit.toLocaleString()}</span></div>{selectedEvent.fee - selectedEvent.deposit > 0 && <div className="flex items-center gap-2 text-sm"><AlertCircle size={14} className="text-amber-400" /><span className="text-gray-400">{t.remaining}:</span><span className="text-amber-300 font-bold">{(selectedEvent.fee - selectedEvent.deposit).toLocaleString()}</span></div>}</div>
-            {(selectedEvent.soundLightProvider || selectedEvent.soundLightRequirements || selectedEvent.equipmentNeeded) && <div className="bg-white/5 backdrop-blur-xl rounded-xl p-4 space-y-2">{selectedEvent.soundLightProvider && <div className="flex items-start gap-2 text-sm"><Speaker size={14} className="text-purple-400 mt-0.5" /><span className="text-gray-400 flex-shrink-0">{t.soundLightProvider}:</span><span className="text-white">{selectedEvent.soundLightProvider}</span></div>}{selectedEvent.soundLightProviderPhone && <div className="flex items-start gap-2 text-sm"><Phone size={14} className="text-blue-400 mt-0.5" /><span className="text-gray-400 flex-shrink-0">{locale === "fa" ? "شماره تامین‌کننده" : "Provider Phone"}:</span><span className="text-white" dir="ltr">{selectedEvent.soundLightProviderPhone}</span></div>}{selectedEvent.soundLightRequirements && <div className="flex items-start gap-2 text-sm"><Lightbulb size={14} className="text-amber-400 mt-0.5" /><span className="text-gray-400 flex-shrink-0">{t.soundLightRequirements}:</span><span className="text-white">{selectedEvent.soundLightRequirements}</span></div>}{selectedEvent.equipmentNeeded && <div className="flex items-start gap-2 text-sm"><Music size={14} className="text-red-400 mt-0.5" /><span className="text-gray-400 flex-shrink-0">{t.equipmentNeeded}:</span><span className="text-white">{selectedEvent.equipmentNeeded}</span></div>}</div>}
-            {(selectedEvent.musicianName || selectedEvent.musicianInstrument || selectedEvent.musicianFee > 0) && (
-              <div className="bg-white/5 backdrop-blur-xl rounded-xl p-4 space-y-2">
-                {selectedEvent.musicianName && (
-                  <div className="flex items-center gap-2 text-sm">
-                    <Music2 size={14} className="text-pink-400" />
-                    <span className="text-gray-400">{t.musicianName}:</span>
-                    <span className="text-white">{selectedEvent.musicianName}</span>
+            {(readProviderLines(selectedEvent).length > 0 || selectedEvent.soundLightRequirements || selectedEvent.equipmentNeeded) && (
+              <div className="bg-white/5 backdrop-blur-xl rounded-xl p-4 space-y-3">
+                {readProviderLines(selectedEvent).length > 0 && (
+                  <>
+                    <p className="text-xs font-bold text-blue-300 flex items-center gap-1.5">
+                      <Speaker size={13} />{t.dirProviders}
+                    </p>
+                    {readProviderLines(selectedEvent).map((pv, i) => (
+                      <div key={i} className="bg-blue-500/8 border border-blue-400/20 rounded-lg p-2.5 space-y-1">
+                        <p className="text-sm font-semibold text-white">{pv.name}</p>
+                        <div className="flex items-center gap-3 flex-wrap text-[11px]">
+                          {pv.service && <span className="text-blue-300">{equipmentLabel(pv.service, t)}</span>}
+                          {pv.phone && <a href={`tel:${pv.phone}`} className="text-emerald-300" dir="ltr">{pv.phone}</a>}
+                          {pv.cost > 0 && <span className="text-amber-300" dir="ltr">{pv.cost.toLocaleString()}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </>
+                )}
+                {selectedEvent.soundLightRequirements && (
+                  <div className="flex items-start gap-2 text-sm">
+                    <Lightbulb size={14} className="text-amber-400 mt-0.5" />
+                    <span className="text-gray-400 flex-shrink-0">{t.soundLightRequirements}:</span>
+                    <span className="text-white">{selectedEvent.soundLightRequirements}</span>
                   </div>
                 )}
-                {selectedEvent.musicianInstrument && (
-                  <div className="flex items-center gap-2 text-sm">
-                    <Music size={14} className="text-purple-400" />
-                    <span className="text-gray-400">{t.instrument}:</span>
-                    <span className="text-white">{selectedEvent.musicianInstrument}</span>
-                  </div>
-                )}
-                {selectedEvent.musicianPhone && (
-                  <div className="flex items-center gap-2 text-sm">
-                    <Phone size={14} className="text-emerald-400" />
-                    <span className="text-gray-400">{t.musicianPhone}:</span>
-                    <span className="text-white" dir="ltr">{selectedEvent.musicianPhone}</span>
-                  </div>
-                )}
-                {selectedEvent.musicianFee > 0 && (
-                  <div className="flex items-center gap-2 text-sm">
-                    <DollarSign size={14} className="text-amber-400" />
-                    <span className="text-gray-400">{t.musicianFee}:</span>
-                    <span className="text-amber-300 font-medium">{selectedEvent.musicianFee.toLocaleString()}</span>
-                  </div>
-                )}
-              </div>
-            )}
-            {(selectedEvent.colleagueName || selectedEvent.colleagueFee > 0) && (
-              <div className="bg-white/5 backdrop-blur-xl rounded-xl p-4 space-y-2">
-                {selectedEvent.colleagueName && (
-                  <div className="flex items-center gap-2 text-sm">
-                    <Disc3 size={14} className="text-indigo-400" />
-                    <span className="text-gray-400">{t.colleagueName}:</span>
-                    <span className="text-white">{selectedEvent.colleagueName}</span>
-                  </div>
-                )}
-                {selectedEvent.colleagueRole && (
-                  <div className="flex items-center gap-2 text-sm">
-                    <Users size={14} className="text-purple-400" />
-                    <span className="text-gray-400">{t.colleagueRole}:</span>
-                    <span className="text-white">{roleLabel(selectedEvent.colleagueRole, t)}</span>
-                  </div>
-                )}
-                {selectedEvent.colleaguePhone && (
-                  <div className="flex items-center gap-2 text-sm">
-                    <Phone size={14} className="text-emerald-400" />
-                    <span className="text-gray-400">{t.colleaguePhone}:</span>
-                    <span className="text-white" dir="ltr">{selectedEvent.colleaguePhone}</span>
-                  </div>
-                )}
-                {selectedEvent.colleagueFee > 0 && (
-                  <div className="flex items-center gap-2 text-sm">
-                    <DollarSign size={14} className="text-amber-400" />
-                    <span className="text-gray-400">{t.colleagueFee}:</span>
-                    <span className="text-amber-300 font-medium">{selectedEvent.colleagueFee.toLocaleString()}</span>
+                {selectedEvent.equipmentNeeded && (
+                  <div className="flex items-start gap-2 text-sm">
+                    <Music size={14} className="text-red-400 mt-0.5" />
+                    <span className="text-gray-400 flex-shrink-0">{t.equipmentNeeded}:</span>
+                    <span className="text-white">{selectedEvent.equipmentNeeded}</span>
                   </div>
                 )}
               </div>
             )}
+            {readMusicianLines(selectedEvent).length > 0 && (
+              <div className="bg-white/5 backdrop-blur-xl rounded-xl p-4 space-y-3">
+                <p className="text-xs font-bold text-pink-300 flex items-center gap-1.5">
+                  <Music2 size={13} />{t.dirMusicians}
+                </p>
+                {readMusicianLines(selectedEvent).map((m, i) => (
+                  <div key={i} className="bg-pink-500/8 border border-pink-400/20 rounded-lg p-2.5 space-y-1">
+                    <p className="text-sm font-semibold text-white">{m.name}</p>
+                    <div className="flex items-center gap-3 flex-wrap text-[11px]">
+                      {m.instrument && <span className="text-pink-300">{m.instrument}</span>}
+                      {m.phone && <a href={`tel:${m.phone}`} className="text-emerald-300" dir="ltr">{m.phone}</a>}
+                      {m.fee > 0 && <span className="text-amber-300" dir="ltr">{m.fee.toLocaleString()}</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {readColleagueLines(selectedEvent).length > 0 && (
+              <div className="bg-white/5 backdrop-blur-xl rounded-xl p-4 space-y-3">
+                <p className="text-xs font-bold text-indigo-300 flex items-center gap-1.5">
+                  <Disc3 size={13} />{t.dirColleagues}
+                </p>
+                {readColleagueLines(selectedEvent).map((c, i) => (
+                  <div key={i} className="bg-indigo-500/8 border border-indigo-400/20 rounded-lg p-2.5 space-y-1">
+                    <p className="text-sm font-semibold text-white">{c.name}</p>
+                    <div className="flex items-center gap-3 flex-wrap text-[11px]">
+                      {c.role && <span className="text-indigo-300">{roleLabel(c.role, t)}</span>}
+                      {c.phone && <a href={`tel:${c.phone}`} className="text-emerald-300" dir="ltr">{c.phone}</a>}
+                      {c.fee > 0 && <span className="text-amber-300" dir="ltr">{c.fee.toLocaleString()}</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {selectedEvent.description && <div className="bg-white/5 backdrop-blur-xl rounded-xl p-4"><div className="flex items-start gap-2 text-sm"><FileText size={14} className="text-gray-400 mt-0.5" /><p className="text-gray-300 whitespace-pre-wrap">{selectedEvent.description}</p></div></div>}
             <div className="flex gap-3 pt-2"><GlassButton onClick={() => generateEventQR(selectedEvent)} variant="primary" className="flex-1"><QrCode size={16} className="inline ml-2" />QR</GlassButton><GlassButton onClick={() => { setShowDetailModal(false); openEditEventForm(selectedEvent); }} className="flex-1"><Edit3 size={16} className="inline ml-2" />{t.editEvent}</GlassButton><GlassButton onClick={() => setShowDeleteConfirm(true)} variant="danger" className="flex-1"><Trash2 size={16} className="inline ml-2" />{t.delete}</GlassButton></div>
           </div>
@@ -2474,34 +2504,50 @@ export default function DJApp() {
             })()}
             {formStep === 2 && (<><div><label className={lc}>{t.fee}</label><input type="number" value={formData.fee || ""} onChange={e => setFormData(p => ({ ...p, fee: parseInt(e.target.value) || 0 }))} className={ic} placeholder={locale === "fa" ? "مبلغ (تومان)" : "Fee (Toman)"} dir="ltr" /></div><div><label className={lc}>{t.deposit}</label><input type="number" value={formData.deposit || ""} onChange={e => setFormData(p => ({ ...p, deposit: parseInt(e.target.value) || 0 }))} className={ic} placeholder={locale === "fa" ? "بیعانه (تومان)" : "Deposit (Toman)"} dir="ltr" /></div><div className="bg-amber-500/10 backdrop-blur-xl border border-amber-500/20 rounded-xl p-4"><div className="flex items-center gap-2 text-sm"><AlertCircle size={14} className="text-amber-400" /><span className="text-amber-300">{t.remaining}:</span><span className="text-amber-200 font-bold">{(formData.fee - formData.deposit).toLocaleString()} {locale === "fa" ? "تومان" : "Toman"}</span></div></div></>)}
             {formStep === 3 && (<>
-              {/* Toggle */}
+              {/* ── Sound & light ── */}
               <div className="flex items-center justify-between bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl px-4 py-3">
-                <div className="flex items-center gap-2"><Speaker size={16} className="text-purple-400" /><span className="text-sm font-medium text-gray-200">{locale === "fa" ? "نیاز به صوت و نور" : "Need Sound & Light"}</span></div>
-                <button type="button" onClick={() => setFormData(p => ({ ...p, soundLightEnabled: !p.soundLightEnabled }))}
-                  className={`relative w-12 h-7 rounded-full transition-all duration-300 ${formData.soundLightEnabled ? "bg-purple-600" : "bg-gray-600"}`}>
+                <div className="flex items-center gap-2">
+                  <Speaker size={16} className="text-blue-400" />
+                  <span className="text-sm font-medium text-gray-200">{locale === "fa" ? "نیاز به صوت و نور" : "Need Sound & Light"}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setFormData(p => ({ ...p, soundLightEnabled: !p.soundLightEnabled }))}
+                  className={`relative w-12 h-7 rounded-full transition-all duration-300 ${formData.soundLightEnabled ? "bg-blue-600" : "bg-gray-600"}`}
+                >
                   <span className={`absolute top-0.5 w-6 h-6 rounded-full bg-white shadow-md transition-all duration-300 ${formData.soundLightEnabled ? (isRtl ? "right-0.5" : "left-[22px]") : (isRtl ? "right-[22px]" : "left-0.5")}`} />
                 </button>
               </div>
-              {formData.soundLightEnabled && (<>
-                {providers.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setShowProviderPicker(true)}
-                    className="w-full py-3 rounded-2xl bg-gradient-to-r from-blue-600/25 to-purple-600/25 border border-blue-400/40 text-sm font-bold text-blue-100 flex items-center justify-center gap-2 active:scale-[0.98] transition-all"
-                  >
-                    <Speaker size={16} />{t.selectProvider}
-                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-500/25 text-blue-200">{providers.length}</span>
-                  </button>
-                )}
-                <div><label className={lc}>{t.soundLightProvider}</label><div className="flex gap-2"><input type="text" value={formData.soundLightProvider} onChange={e => setFormData(p => ({ ...p, soundLightProvider: e.target.value }))} className={ic} placeholder={locale === "fa" ? "نام تامین‌کننده" : "Provider name"} /><GlassButton onClick={() => handleContactPicker("provider")} size="md"><Contact size={18} /></GlassButton></div></div>
-                <div><label className={lc}>{locale === "fa" ? "شماره تامین‌کننده" : "Provider Phone"}</label><input type="tel" value={formData.soundLightProviderPhone} onChange={e => setFormData(p => ({ ...p, soundLightProviderPhone: e.target.value }))} className={ic} placeholder="09123456789" dir="ltr" /></div>
-                <div><label className={lc}>{t.soundLightRequirements}</label><textarea value={formData.soundLightRequirements} onChange={e => setFormData(p => ({ ...p, soundLightRequirements: e.target.value }))} className={`${ic} min-h-[80px] resize-none`} placeholder={locale === "fa" ? "نیازهای صوت و نور" : "Sound & light requirements"} /></div>
-                <div><label className={lc}>{t.equipmentNeeded}</label><textarea value={formData.equipmentNeeded} onChange={e => setFormData(p => ({ ...p, equipmentNeeded: e.target.value }))} className={`${ic} min-h-[80px] resize-none`} placeholder={locale === "fa" ? "لوازم دی‌جی" : "DJ equipment"} /></div>
-                <div><label className={lc}>{t.soundLightCost}</label><input type="number" value={formData.soundLightCost || ""} onChange={e => setFormData(p => ({ ...p, soundLightCost: parseInt(e.target.value) || 0 }))} className={ic} placeholder={locale === "fa" ? "هزینه (تومان)" : "Cost (Toman)"} dir="ltr" /></div>
-              </>)}
-              {!formData.soundLightEnabled && (<div className="text-center py-6"><Speaker size={32} className="mx-auto mb-2 text-gray-600" /><p className="text-xs text-gray-500">{locale === "fa" ? "این برنامه نیاز به تامین‌کننده صوت و نور ندارد" : "This event doesn't need sound & light provider"}</p></div>)}
 
-              {/* ── Musician ── */}
+              {formData.soundLightEnabled ? (
+                <ProviderLinesEditor
+                  locale={locale}
+                  lines={providerLines}
+                  savedCount={providers.length}
+                  onChange={setProviderLines}
+                  onPickSaved={() => setShowProviderPicker(true)}
+                />
+              ) : (
+                <div className="text-center py-5">
+                  <Speaker size={30} className="mx-auto mb-2 text-gray-600" />
+                  <p className="text-xs text-gray-500">{locale === "fa" ? "این برنامه نیاز به تامین‌کننده صوت و نور ندارد" : "This event doesn't need a sound & light provider"}</p>
+                </div>
+              )}
+
+              {/* DJ's own equipment list stays independent of the providers */}
+              {formData.soundLightEnabled && (
+                <div>
+                  <label className={lc}>{t.equipmentNeeded}</label>
+                  <textarea
+                    value={formData.equipmentNeeded}
+                    onChange={e => setFormData(p => ({ ...p, equipmentNeeded: e.target.value }))}
+                    className={`${ic} min-h-[80px] resize-none`}
+                    placeholder={locale === "fa" ? "لوازم دی‌جی" : "DJ equipment"}
+                  />
+                </div>
+              )}
+
+              {/* ── Musicians ── */}
               <div className="pt-4 mt-2 border-t border-white/10 space-y-4">
                 <div className="flex items-center justify-between bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl px-4 py-3">
                   <div className="flex items-center gap-2">
@@ -2518,46 +2564,23 @@ export default function DJApp() {
                 </div>
 
                 {formData.musicianEnabled ? (
-                  <>
-                    {musicians.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => setShowMusicianPicker(true)}
-                        className="w-full py-3 rounded-2xl bg-gradient-to-r from-pink-600/25 to-purple-600/25 border border-pink-400/40 text-sm font-bold text-pink-100 flex items-center justify-center gap-2 active:scale-[0.98] transition-all"
-                      >
-                        <Music2 size={16} />{t.selectMusician}
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-pink-500/25 text-pink-200">{musicians.length}</span>
-                      </button>
-                    )}
-                    <div>
-                      <label className={lc}>{t.musicianName}</label>
-                      <input type="text" value={formData.musicianName} onChange={e => setFormData(p => ({ ...p, musicianName: e.target.value }))} className={ic} placeholder={t.musicianName} />
-                    </div>
-                    <div>
-                      <label className={lc}>{t.instrument}</label>
-                      <input type="text" value={formData.musicianInstrument} onChange={e => setFormData(p => ({ ...p, musicianInstrument: e.target.value }))} className={ic} placeholder={locale === "fa" ? "مثلا: تنبک، ویولن" : "e.g. Violin"} />
-                    </div>
-                    <div>
-                      <label className={lc}>{t.musicianPhone}</label>
-                      <div className="flex gap-2">
-                        <input type="tel" value={formData.musicianPhone} onChange={e => setFormData(p => ({ ...p, musicianPhone: e.target.value }))} className={ic} placeholder="09123456789" dir="ltr" inputMode="tel" />
-                        <GlassButton onClick={() => handleContactPicker("musician")} size="md"><Contact size={18} /></GlassButton>
-                      </div>
-                    </div>
-                    <div>
-                      <label className={lc}>{t.musicianFee}</label>
-                      <input type="number" value={formData.musicianFee || ""} onChange={e => setFormData(p => ({ ...p, musicianFee: parseInt(e.target.value) || 0 }))} className={ic} placeholder="0" dir="ltr" inputMode="numeric" />
-                    </div>
-                  </>
+                  <MusicianLinesEditor
+                    locale={locale}
+                    lines={musicianLines}
+                    savedCount={musicians.length}
+                    onChange={setMusicianLines}
+                    onPickSaved={() => setShowMusicianPicker(true)}
+                    onPickContact={(index) => { setLineContactTarget({ kind: "musician", index }); handleContactPicker("musician"); }}
+                  />
                 ) : (
-                  <div className="text-center py-6">
-                    <Music2 size={32} className="mx-auto mb-2 text-gray-600" />
+                  <div className="text-center py-5">
+                    <Music2 size={30} className="mx-auto mb-2 text-gray-600" />
                     <p className="text-xs text-gray-500">{t.noMusicianNeeded}</p>
                   </div>
                 )}
               </div>
 
-              {/* ── Second DJ / colleague ── */}
+              {/* ── Second DJ / colleagues ── */}
               <div className="pt-4 mt-2 border-t border-white/10 space-y-4">
                 <div className="flex items-center justify-between bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl px-4 py-3">
                   <div className="flex items-center gap-2">
@@ -2574,48 +2597,17 @@ export default function DJApp() {
                 </div>
 
                 {formData.colleagueEnabled ? (
-                  <>
-                    {colleagues.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => setShowColleaguePicker(true)}
-                        className="w-full py-3 rounded-2xl bg-gradient-to-r from-indigo-600/25 to-purple-600/25 border border-indigo-400/40 text-sm font-bold text-indigo-100 flex items-center justify-center gap-2 active:scale-[0.98] transition-all"
-                      >
-                        <Disc3 size={16} />{t.selectColleague}
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-500/25 text-indigo-200">{colleagues.length}</span>
-                      </button>
-                    )}
-                    <div>
-                      <label className={lc}>{t.colleagueName}</label>
-                      <input type="text" value={formData.colleagueName} onChange={e => setFormData(p => ({ ...p, colleagueName: e.target.value }))} className={ic} placeholder={t.colleagueName} />
-                    </div>
-                    <div>
-                      <label className={lc}>{t.colleagueRole}</label>
-                      <select
-                        value={formData.colleagueRole}
-                        onChange={e => setFormData(p => ({ ...p, colleagueRole: e.target.value }))}
-                        className={`${sc} cursor-pointer`}
-                      >
-                        {(["dj", "showman", "singer", "vipMusic"] as const).map(r => (
-                          <option key={r} value={r} className="bg-[#1a1a2e]">{roleLabel(r, t)}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className={lc}>{t.colleaguePhone}</label>
-                      <div className="flex gap-2">
-                        <input type="tel" value={formData.colleaguePhone} onChange={e => setFormData(p => ({ ...p, colleaguePhone: e.target.value }))} className={ic} placeholder="09123456789" dir="ltr" inputMode="tel" />
-                        <GlassButton onClick={() => handleContactPicker("colleague")} size="md"><Contact size={18} /></GlassButton>
-                      </div>
-                    </div>
-                    <div>
-                      <label className={lc}>{t.colleagueFee}</label>
-                      <input type="number" value={formData.colleagueFee || ""} onChange={e => setFormData(p => ({ ...p, colleagueFee: parseInt(e.target.value) || 0 }))} className={ic} placeholder="0" dir="ltr" inputMode="numeric" />
-                    </div>
-                  </>
+                  <ColleagueLinesEditor
+                    locale={locale}
+                    lines={colleagueLines}
+                    savedCount={colleagues.length}
+                    onChange={setColleagueLines}
+                    onPickSaved={() => setShowColleaguePicker(true)}
+                    onPickContact={(index) => { setLineContactTarget({ kind: "colleague", index }); handleContactPicker("colleague"); }}
+                  />
                 ) : (
-                  <div className="text-center py-6">
-                    <Disc3 size={32} className="mx-auto mb-2 text-gray-600" />
+                  <div className="text-center py-5">
+                    <Disc3 size={30} className="mx-auto mb-2 text-gray-600" />
                     <p className="text-xs text-gray-500">{t.noColleagueNeeded}</p>
                   </div>
                 )}

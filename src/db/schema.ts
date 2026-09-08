@@ -30,6 +30,10 @@ export const events = pgTable("events", {
   colleagueRole: text("colleague_role"),
   colleaguePhone: text("colleague_phone"),
   colleagueFee: bigint("colleague_fee", { mode: "number" }).notNull().default(0),
+  /** JSON arrays so an event can have several of each */
+  musiciansJson: text("musicians_json"),
+  providersJson: text("providers_json"),
+  colleaguesJson: text("colleagues_json"),
   description: text("description"),
   customerName: text("customer_name"),
   customerPhone: text("customer_phone"),
