@@ -7,7 +7,7 @@ import {
   Globe, Speaker, Lightbulb, PartyPopper, LayoutDashboard, List, Settings,
   Download, Upload, RefreshCw, User, CheckCircle, Copy, QrCode, Contact,
   Bell, Share2, Mail, CreditCard as CardIcon, LogOut, Landmark, Smartphone,
-  ChevronUp, ChevronDown, Info, UtensilsCrossed, Music2,
+  ChevronUp, ChevronDown, Info, UtensilsCrossed, Music2, Disc3,
 } from "lucide-react";
 import { translations, type Locale } from "@/lib/i18n";
 import { toJalaali, toGregorian, jalaaliMonthLength, formatJalaaliDate, formatGregorianDate, todayJalaali } from "@/lib/jalaali";
@@ -50,11 +50,13 @@ import {
 import ShareBankModal, { type ShareKind } from "./ShareBankModal";
 import AdSlider from "./AdSlider";
 import AboutModal from "./AboutModal";
-import CustomersSection, { CustomerFormModal, CustomerPickerModal, EMPTY_CUSTOMER, type CustomerDraft } from "./CustomersSection";
+import { CustomerFormModal, CustomerPickerModal, EMPTY_CUSTOMER, type CustomerDraft } from "./CustomersSection";
 import {
-  MusiciansSection, MusicianFormModal, MusicianPickerModal, EMPTY_MUSICIAN, type MusicianDraft,
-  ProvidersSection, ProviderFormModal, ProviderPickerModal, EMPTY_PROVIDER, type ProviderDraft,
+  MusicianFormModal, MusicianPickerModal, EMPTY_MUSICIAN, type MusicianDraft,
+  ProviderFormModal, ProviderPickerModal, EMPTY_PROVIDER, type ProviderDraft,
 } from "./RosterSections";
+import DirectorySection from "./DirectorySection";
+import { ColleagueFormModal, ColleaguePickerModal, EMPTY_COLLEAGUE, roleLabel, type ColleagueDraft } from "./ColleagueParts";
 import {
   loadProfile,
   saveProfile,
@@ -84,12 +86,17 @@ import {
   deleteLocalProvider,
   type LocalEvent,
   type LocalCustomer,
+  getLocalColleagues,
+  addLocalColleague,
+  updateLocalColleague,
+  deleteLocalColleague,
   type LocalMusician,
   type LocalSoundProvider,
+  type LocalColleague,
 } from "@/lib/localStore";
 
 // ── Types ──
-interface EventData { id: number; eventType: string; title: string | null; shamsiDate: string; gregorianDate: string; venue: string | null; location: string | null; fee: number; deposit: number; equipmentNeeded: string | null; soundLightProvider: string | null; soundLightProviderPhone: string | null; soundLightRequirements: string | null; soundLightCost: number; musicianName: string | null; musicianInstrument: string | null; musicianPhone: string | null; musicianFee: number; description: string | null; customerName: string | null; customerPhone: string | null; guestCount: number; status: string; createdAt: string | null; updatedAt: string | null; }
+interface EventData { id: number; eventType: string; title: string | null; shamsiDate: string; gregorianDate: string; venue: string | null; location: string | null; fee: number; deposit: number; equipmentNeeded: string | null; soundLightProvider: string | null; soundLightProviderPhone: string | null; soundLightRequirements: string | null; soundLightCost: number; musicianName: string | null; musicianInstrument: string | null; musicianPhone: string | null; musicianFee: number; colleagueName: string | null; colleagueRole: string | null; colleaguePhone: string | null; colleagueFee: number; description: string | null; customerName: string | null; customerPhone: string | null; guestCount: number; status: string; createdAt: string | null; updatedAt: string | null; }
 interface Stats { totalEvents: number; unsettledEvents: number; totalRevenue: number; upcomingCount: number; upcomingEvents: EventData[]; }
 interface ReminderData { id: number; title: string; shamsiDate: string; gregorianDate: string; time: string | null; notifyBefore: string | null; contactName: string | null; contactPhone: string | null; description: string | null; completed: number; }
 interface BankCardData { id: number; title: string; cardNumber: string; sheba?: string; }
@@ -209,6 +216,11 @@ export default function DJApp() {
   const [providerDraft, setProviderDraft] = useState<ProviderDraft>(EMPTY_PROVIDER);
   const [editingProviderId, setEditingProviderId] = useState<number | null>(null);
   const [rosterBusy, setRosterBusy] = useState(false);
+  const [colleagues, setColleagues] = useState<LocalColleague[]>([]);
+  const [showColleagueForm, setShowColleagueForm] = useState(false);
+  const [showColleaguePicker, setShowColleaguePicker] = useState(false);
+  const [colleagueDraft, setColleagueDraft] = useState<ColleagueDraft>(EMPTY_COLLEAGUE);
+  const [editingColleagueId, setEditingColleagueId] = useState<number | null>(null);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressFired = useRef(false);
 
@@ -252,7 +264,7 @@ export default function DJApp() {
   const [holidayTooltip, setHolidayTooltip] = useState<{ name: string; isHoliday: boolean } | null>(null);
   const [reminderDate, setReminderDate] = useState<string>("");
 
-  const [formData, setFormData] = useState({ eventType: "wedding", title: "", shamsiDate: "", gregorianDate: "", venue: "", location: "", fee: 0, deposit: 0, equipmentNeeded: "", soundLightProvider: "", soundLightProviderPhone: "", soundLightRequirements: "", soundLightCost: 0, soundLightEnabled: false, musicianEnabled: false, musicianName: "", musicianInstrument: "", musicianPhone: "", musicianFee: 0, description: "", customerName: "", customerPhone: "", guestCount: 0, status: "pending" });
+  const [formData, setFormData] = useState({ eventType: "wedding", title: "", shamsiDate: "", gregorianDate: "", venue: "", location: "", fee: 0, deposit: 0, equipmentNeeded: "", soundLightProvider: "", soundLightProviderPhone: "", soundLightRequirements: "", soundLightCost: 0, soundLightEnabled: false, musicianEnabled: false, musicianName: "", musicianInstrument: "", musicianPhone: "", musicianFee: 0, colleagueEnabled: false, colleagueName: "", colleagueRole: "dj", colleaguePhone: "", colleagueFee: 0, description: "", customerName: "", customerPhone: "", guestCount: 0, status: "pending" });
   const [reminderForm, setReminderForm] = useState({ title: "", shamsiDate: "", gregorianDate: "", time: "", notifyBefore: "0", contactName: "", contactPhone: "", description: "" });
   const [bankCardForm, setBankCardForm] = useState({ title: "", cardNumber: "", sheba: "" });
 
@@ -369,11 +381,14 @@ export default function DJApp() {
       showReminderDatePicker || showProfileModal || showCalendarTip ||
       showExitConfirm || showAbout || showCustomerForm || showCustomerPicker ||
       showMusicianForm || showMusicianPicker || showProviderForm || showProviderPicker ||
+      showColleagueForm || showColleaguePicker ||
       !!shareKind || !!selectedDate;
 
     const closeTopOverlay = () => {
       if (showExitConfirm) { setShowExitConfirm(false); return; }
       if (showAbout) { setShowAbout(false); return; }
+      if (showColleaguePicker) { setShowColleaguePicker(false); return; }
+      if (showColleagueForm) { setShowColleagueForm(false); setEditingColleagueId(null); return; }
       if (showMusicianPicker) { setShowMusicianPicker(false); return; }
       if (showProviderPicker) { setShowProviderPicker(false); return; }
       if (showMusicianForm) { setShowMusicianForm(false); setEditingMusicianId(null); return; }
@@ -424,6 +439,7 @@ export default function DJApp() {
     showProfileModal, showCalendarTip, showExitConfirm, showAbout,
     showCustomerForm, showCustomerPicker,
     showMusicianForm, showMusicianPicker, showProviderForm, showProviderPicker,
+    showColleagueForm, showColleaguePicker,
   ]);
 
   // Show the calendar long-press tip the first time the tab is opened.
@@ -573,12 +589,23 @@ export default function DJApp() {
     }
   }, [onlineMode]);
 
+  const fetchColleagues = useCallback(async () => {
+    if (!onlineMode) { setColleagues(getLocalColleagues()); return; }
+    try {
+      const r = await fetch("/api/colleagues");
+      setColleagues(r.ok ? ((await r.json()) as LocalColleague[]) : []);
+    } catch (e) {
+      console.error("Fetch colleagues failed:", e);
+      setColleagues([]);
+    }
+  }, [onlineMode]);
+
   // Bank cards are always stored on the device only — never uploaded
   const fetchBankCards = useCallback(async () => {
     setBankCards(getBankCards() as unknown as BankCardData[]);
   }, []);
 
-  useEffect(() => { if (!showSetup) { fetchEvents(); fetchReminders(); fetchBankCards(); fetchCustomers(); fetchMusicians(); fetchProviders(); } }, [fetchEvents, fetchReminders, fetchBankCards, fetchCustomers, fetchMusicians, fetchProviders, showSetup]);
+  useEffect(() => { if (!showSetup) { fetchEvents(); fetchReminders(); fetchBankCards(); fetchCustomers(); fetchMusicians(); fetchProviders(); fetchColleagues(); } }, [fetchEvents, fetchReminders, fetchBankCards, fetchCustomers, fetchMusicians, fetchProviders, fetchColleagues, showSetup]);
 
   // Daily notifications for today's + tomorrow's events (once per day)
   useEffect(() => {
@@ -667,11 +694,14 @@ export default function DJApp() {
   const getMonthEvents = (): EventData[] => { const evList = Array.isArray(events) ? events : []; if (calendarType === "shamsi") { const p = `${shamsiMonth.year}/${String(shamsiMonth.month).padStart(2, "0")}/`; return evList.filter(e => e.shamsiDate.startsWith(p) && e.status !== "cancelled").sort((a, b) => a.shamsiDate.localeCompare(b.shamsiDate)); } else { const p = `${gregMonth.year}-${String(gregMonth.month).padStart(2, "0")}-`; return evList.filter(e => e.gregorianDate.startsWith(p) && e.status !== "cancelled").sort((a, b) => a.gregorianDate.localeCompare(b.gregorianDate)); } };
 
   // Form
-  const openNewEventForm = (date?: string) => { setEditingEvent(null); const sd = date || todayStr; const p = sd.split("/"); const g = toGregorian(parseInt(p[0]), parseInt(p[1]), parseInt(p[2])); setFormData({ eventType: "wedding", title: "", shamsiDate: sd, gregorianDate: formatGregorianDate(g.gy, g.gm, g.gd), venue: "", location: "", fee: 0, deposit: 0, equipmentNeeded: "", soundLightProvider: "", soundLightProviderPhone: "", soundLightRequirements: "", soundLightCost: 0, soundLightEnabled: false, musicianEnabled: false, musicianName: "", musicianInstrument: "", musicianPhone: "", musicianFee: 0, description: "", customerName: "", customerPhone: "", guestCount: 0, status: "pending" }); setFormStep(0); setShowEventModal(true); };
+  const openNewEventForm = (date?: string) => { setEditingEvent(null); const sd = date || todayStr; const p = sd.split("/"); const g = toGregorian(parseInt(p[0]), parseInt(p[1]), parseInt(p[2])); setFormData({ eventType: "wedding", title: "", shamsiDate: sd, gregorianDate: formatGregorianDate(g.gy, g.gm, g.gd), venue: "", location: "", fee: 0, deposit: 0, equipmentNeeded: "", soundLightProvider: "", soundLightProviderPhone: "", soundLightRequirements: "", soundLightCost: 0, soundLightEnabled: false, musicianEnabled: false, musicianName: "", musicianInstrument: "", musicianPhone: "", musicianFee: 0, colleagueEnabled: false, colleagueName: "", colleagueRole: "dj", colleaguePhone: "", colleagueFee: 0, description: "", customerName: "", customerPhone: "", guestCount: 0, status: "pending" }); setFormStep(0); setShowEventModal(true); };
   const openEditEventForm = (ev: EventData) => { setEditingEvent(ev); setFormData({ eventType: ev.eventType, title: ev.title || "", shamsiDate: ev.shamsiDate, gregorianDate: ev.gregorianDate, venue: ev.venue || "", location: ev.location || "", fee: ev.fee, deposit: ev.deposit, equipmentNeeded: ev.equipmentNeeded || "", soundLightProvider: ev.soundLightProvider || "", soundLightProviderPhone: "", soundLightRequirements: ev.soundLightRequirements || "", soundLightCost: ev.soundLightCost, soundLightEnabled: !!(ev.soundLightProvider || ev.soundLightRequirements || ev.soundLightCost),
       musicianEnabled: !!(ev.musicianName || ev.musicianInstrument || ev.musicianFee),
       musicianName: ev.musicianName || "", musicianInstrument: ev.musicianInstrument || "",
-      musicianPhone: ev.musicianPhone || "", musicianFee: ev.musicianFee || 0, description: ev.description || "", customerName: ev.customerName || "", customerPhone: ev.customerPhone || "", guestCount: ev.guestCount || 0, status: ev.status }); setFormStep(0); setShowEventModal(true); };
+      musicianPhone: ev.musicianPhone || "", musicianFee: ev.musicianFee || 0,
+      colleagueEnabled: !!(ev.colleagueName || ev.colleagueFee),
+      colleagueName: ev.colleagueName || "", colleagueRole: ev.colleagueRole || "dj",
+      colleaguePhone: ev.colleaguePhone || "", colleagueFee: ev.colleagueFee || 0, description: ev.description || "", customerName: ev.customerName || "", customerPhone: ev.customerPhone || "", guestCount: ev.guestCount || 0, status: ev.status }); setFormStep(0); setShowEventModal(true); };
   // Shamsi → Gregorian (auto-sync)
   const handleShamsiDateChange = (val: string) => {
     const norm = val.replace(/[-.]/g, "/").replace(/[^\d/]/g, "");
@@ -735,6 +765,14 @@ export default function DJApp() {
       } else {
         payload.musicianFee = Number(formData.musicianFee) || 0;
       }
+      if (!formData.colleagueEnabled) {
+        payload.colleagueName = "";
+        payload.colleagueRole = "";
+        payload.colleaguePhone = "";
+        payload.colleagueFee = 0;
+      } else {
+        payload.colleagueFee = Number(formData.colleagueFee) || 0;
+      }
 
       const wasEditingId = editingEvent?.id;
 
@@ -795,7 +833,7 @@ export default function DJApp() {
   };
   const handleReset = async () => { try { await fetch("/api/reset", { method: "DELETE" }); localStorage.clear(); setShowResetConfirm(false); window.location.reload(); } catch (e) { console.error(e); } };
 
-  const handleContactPicker = async (target: "customer" | "provider" | "reminder" | "musician") => { try { if ("contacts" in navigator) { const c = await (navigator as any).contacts.select(["name", "tel"], { multiple: false }); if (c.length > 0) { const name = c[0].name?.[0] || ""; const tel = c[0].tel?.[0] || ""; if (target === "customer") setFormData(p => ({ ...p, customerName: name || p.customerName, customerPhone: tel || p.customerPhone })); else if (target === "provider") setFormData(p => ({ ...p, soundLightProvider: name || p.soundLightProvider, soundLightProviderPhone: tel || p.soundLightProviderPhone })); else if (target === "reminder") setReminderForm(p => ({ ...p, contactName: name || p.contactName, contactPhone: tel || p.contactPhone })); else if (target === "musician") setFormData(p => ({ ...p, musicianName: name || p.musicianName, musicianPhone: tel || p.musicianPhone })); } } else alert(t.contactPickerNotSupported); } catch { alert(t.contactPickerFailed); } };
+  const handleContactPicker = async (target: "customer" | "provider" | "reminder" | "musician" | "colleague") => { try { if ("contacts" in navigator) { const c = await (navigator as any).contacts.select(["name", "tel"], { multiple: false }); if (c.length > 0) { const name = c[0].name?.[0] || ""; const tel = c[0].tel?.[0] || ""; if (target === "customer") setFormData(p => ({ ...p, customerName: name || p.customerName, customerPhone: tel || p.customerPhone })); else if (target === "provider") setFormData(p => ({ ...p, soundLightProvider: name || p.soundLightProvider, soundLightProviderPhone: tel || p.soundLightProviderPhone })); else if (target === "reminder") setReminderForm(p => ({ ...p, contactName: name || p.contactName, contactPhone: tel || p.contactPhone })); else if (target === "musician") setFormData(p => ({ ...p, musicianName: name || p.musicianName, musicianPhone: tel || p.musicianPhone })); else if (target === "colleague") setFormData(p => ({ ...p, colleagueName: name || p.colleagueName, colleaguePhone: tel || p.colleaguePhone })); } } else alert(t.contactPickerNotSupported); } catch { alert(t.contactPickerFailed); } };
 
   // Reminder
   const openReminderForm = (dateStr: string) => {
@@ -1161,7 +1199,7 @@ export default function DJApp() {
   /* ── Sound & light providers ── */
   const openNewProvider = () => { setProviderDraft(EMPTY_PROVIDER); setEditingProviderId(null); setShowProviderForm(true); };
   const openEditProvider = (pv: LocalSoundProvider) => {
-    setProviderDraft({ name: pv.name, phone: pv.phone, cost: pv.cost, equipment: pv.equipment || "" });
+    setProviderDraft({ name: pv.name, phone: pv.phone, equipment: pv.equipment || "soundLight" });
     setEditingProviderId(pv.id);
     setShowProviderForm(true);
   };
@@ -1182,7 +1220,7 @@ export default function DJApp() {
       } else if (editingProviderId) {
         updateLocalProvider(editingProviderId, d);
       } else {
-        addLocalProvider(d);
+        addLocalProvider({ ...d, cost: 0 });
       }
       setShowProviderForm(false);
       setEditingProviderId(null);
@@ -1212,13 +1250,11 @@ export default function DJApp() {
       soundLightEnabled: true,
       soundLightProvider: pv.name,
       soundLightProviderPhone: pv.phone,
-      soundLightCost: pv.cost || 0,
-      soundLightRequirements: pv.equipment || p.soundLightRequirements,
     }));
   };
 
   /** Shared contacts picker for the roster forms. */
-  const pickContactFor = async (target: "musician" | "provider") => {
+  const pickContactFor = async (target: "musician" | "provider" | "colleague") => {
     try {
       if ("contacts" in navigator) {
         const picked = await (navigator as unknown as {
@@ -1229,6 +1265,8 @@ export default function DJApp() {
           const tel = (picked[0].tel?.[0] || "").replace(/\s/g, "");
           if (target === "musician") {
             setMusicianDraft(p => ({ ...p, fullName: name || p.fullName, phone: tel || p.phone }));
+          } else if (target === "colleague") {
+            setColleagueDraft(p => ({ ...p, fullName: name || p.fullName, phone: tel || p.phone }));
           } else {
             setProviderDraft(p => ({ ...p, name: name || p.name, phone: tel || p.phone }));
           }
@@ -1239,6 +1277,65 @@ export default function DJApp() {
     } catch {
       alert(t.contactPickerFailed);
     }
+  };
+
+  /* ── DJs & colleagues ── */
+  const openNewColleague = () => { setColleagueDraft(EMPTY_COLLEAGUE); setEditingColleagueId(null); setShowColleagueForm(true); };
+  const openEditColleague = (c: LocalColleague) => {
+    setColleagueDraft({ fullName: c.fullName, role: c.role, phone: c.phone, fee: c.fee });
+    setEditingColleagueId(c.id);
+    setShowColleagueForm(true);
+  };
+
+  const handleSaveColleague = async () => {
+    const d = colleagueDraft;
+    if (!d.fullName.trim() || !d.phone.trim()) return;
+    setRosterBusy(true);
+    try {
+      if (onlineMode) {
+        const url = editingColleagueId ? `/api/colleagues/${editingColleagueId}` : "/api/colleagues";
+        const res = await fetch(url, {
+          method: editingColleagueId ? "PUT" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(d),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      } else if (editingColleagueId) {
+        updateLocalColleague(editingColleagueId, d);
+      } else {
+        addLocalColleague(d);
+      }
+      setShowColleagueForm(false);
+      setEditingColleagueId(null);
+      setColleagueDraft(EMPTY_COLLEAGUE);
+      await fetchColleagues();
+    } catch (e) {
+      console.error("Save colleague failed:", e);
+      alert(locale === "fa" ? "ذخیره همکار ناموفق بود" : "Could not save the colleague");
+    } finally {
+      setRosterBusy(false);
+    }
+  };
+
+  const handleDeleteColleague = async (id: number) => {
+    if (!confirm(t.deleteColleagueConfirm)) return;
+    try {
+      if (onlineMode) await fetch(`/api/colleagues/${id}`, { method: "DELETE" });
+      else deleteLocalColleague(id);
+      await fetchColleagues();
+    } catch (e) { console.error("Delete colleague failed:", e); }
+  };
+
+  /** Fills the event form from a saved colleague. */
+  const applyColleagueToEvent = (c: LocalColleague) => {
+    setFormData(p => ({
+      ...p,
+      colleagueEnabled: true,
+      colleagueName: c.fullName,
+      colleagueRole: c.role,
+      colleaguePhone: c.phone,
+      colleagueFee: c.fee || 0,
+    }));
   };
 
   // Bank cards + Sheba live only on this device (never uploaded anywhere)
@@ -1618,31 +1715,25 @@ export default function DJApp() {
               </div>
             </div>
 
-            {/* Customers — right after the profile */}
-            <CustomersSection
+            {/* Work contacts — customers, musicians, providers, colleagues */}
+            <DirectorySection
               locale={locale}
               customers={customers}
-              onAdd={openNewCustomer}
-              onEdit={openEditCustomer}
-              onDelete={handleDeleteCustomer}
-            />
-
-            {/* Musicians */}
-            <MusiciansSection
-              locale={locale}
               musicians={musicians}
-              onAdd={openNewMusician}
-              onEdit={openEditMusician}
-              onDelete={handleDeleteMusician}
-            />
-
-            {/* Sound & light providers */}
-            <ProvidersSection
-              locale={locale}
               providers={providers}
-              onAdd={openNewProvider}
-              onEdit={openEditProvider}
-              onDelete={handleDeleteProvider}
+              colleagues={colleagues}
+              onAddCustomer={openNewCustomer}
+              onEditCustomer={openEditCustomer}
+              onDeleteCustomer={handleDeleteCustomer}
+              onAddMusician={openNewMusician}
+              onEditMusician={openEditMusician}
+              onDeleteMusician={handleDeleteMusician}
+              onAddProvider={openNewProvider}
+              onEditProvider={openEditProvider}
+              onDeleteProvider={handleDeleteProvider}
+              onAddColleague={openNewColleague}
+              onEditColleague={openEditColleague}
+              onDeleteColleague={handleDeleteColleague}
             />
 
             {/* Bank Cards — above Google account */}
@@ -1838,6 +1929,30 @@ export default function DJApp() {
           </div>
         </div>
       </div>)}
+
+      {/* Colleague create / edit */}
+      {showColleagueForm && (
+        <ColleagueFormModal
+          locale={locale}
+          draft={colleagueDraft}
+          setDraft={setColleagueDraft}
+          isEditing={editingColleagueId !== null}
+          busy={rosterBusy}
+          onPickContact={() => pickContactFor("colleague")}
+          onSave={handleSaveColleague}
+          onClose={() => { setShowColleagueForm(false); setEditingColleagueId(null); }}
+        />
+      )}
+
+      {/* Colleague picker (event form) */}
+      {showColleaguePicker && (
+        <ColleaguePickerModal
+          locale={locale}
+          colleagues={colleagues}
+          onSelect={applyColleagueToEvent}
+          onClose={() => setShowColleaguePicker(false)}
+        />
+      )}
 
       {/* Musician create / edit */}
       {showMusicianForm && (
@@ -2229,6 +2344,38 @@ export default function DJApp() {
                 )}
               </div>
             )}
+            {(selectedEvent.colleagueName || selectedEvent.colleagueFee > 0) && (
+              <div className="bg-white/5 backdrop-blur-xl rounded-xl p-4 space-y-2">
+                {selectedEvent.colleagueName && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <Disc3 size={14} className="text-indigo-400" />
+                    <span className="text-gray-400">{t.colleagueName}:</span>
+                    <span className="text-white">{selectedEvent.colleagueName}</span>
+                  </div>
+                )}
+                {selectedEvent.colleagueRole && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <Users size={14} className="text-purple-400" />
+                    <span className="text-gray-400">{t.colleagueRole}:</span>
+                    <span className="text-white">{roleLabel(selectedEvent.colleagueRole, t)}</span>
+                  </div>
+                )}
+                {selectedEvent.colleaguePhone && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <Phone size={14} className="text-emerald-400" />
+                    <span className="text-gray-400">{t.colleaguePhone}:</span>
+                    <span className="text-white" dir="ltr">{selectedEvent.colleaguePhone}</span>
+                  </div>
+                )}
+                {selectedEvent.colleagueFee > 0 && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <DollarSign size={14} className="text-amber-400" />
+                    <span className="text-gray-400">{t.colleagueFee}:</span>
+                    <span className="text-amber-300 font-medium">{selectedEvent.colleagueFee.toLocaleString()}</span>
+                  </div>
+                )}
+              </div>
+            )}
             {selectedEvent.description && <div className="bg-white/5 backdrop-blur-xl rounded-xl p-4"><div className="flex items-start gap-2 text-sm"><FileText size={14} className="text-gray-400 mt-0.5" /><p className="text-gray-300 whitespace-pre-wrap">{selectedEvent.description}</p></div></div>}
             <div className="flex gap-3 pt-2"><GlassButton onClick={() => generateEventQR(selectedEvent)} variant="primary" className="flex-1"><QrCode size={16} className="inline ml-2" />QR</GlassButton><GlassButton onClick={() => { setShowDetailModal(false); openEditEventForm(selectedEvent); }} className="flex-1"><Edit3 size={16} className="inline ml-2" />{t.editEvent}</GlassButton><GlassButton onClick={() => setShowDeleteConfirm(true)} variant="danger" className="flex-1"><Trash2 size={16} className="inline ml-2" />{t.delete}</GlassButton></div>
           </div>
@@ -2409,6 +2556,70 @@ export default function DJApp() {
                   </div>
                 )}
               </div>
+
+              {/* ── Second DJ / colleague ── */}
+              <div className="pt-4 mt-2 border-t border-white/10 space-y-4">
+                <div className="flex items-center justify-between bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <Disc3 size={16} className="text-indigo-400" />
+                    <span className="text-sm font-medium text-gray-200">{t.needColleague}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setFormData(p => ({ ...p, colleagueEnabled: !p.colleagueEnabled }))}
+                    className={`relative w-12 h-7 rounded-full transition-all duration-300 ${formData.colleagueEnabled ? "bg-indigo-600" : "bg-gray-600"}`}
+                  >
+                    <span className={`absolute top-0.5 w-6 h-6 rounded-full bg-white shadow-md transition-all duration-300 ${formData.colleagueEnabled ? (isRtl ? "right-0.5" : "left-[22px]") : (isRtl ? "right-[22px]" : "left-0.5")}`} />
+                  </button>
+                </div>
+
+                {formData.colleagueEnabled ? (
+                  <>
+                    {colleagues.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowColleaguePicker(true)}
+                        className="w-full py-3 rounded-2xl bg-gradient-to-r from-indigo-600/25 to-purple-600/25 border border-indigo-400/40 text-sm font-bold text-indigo-100 flex items-center justify-center gap-2 active:scale-[0.98] transition-all"
+                      >
+                        <Disc3 size={16} />{t.selectColleague}
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-500/25 text-indigo-200">{colleagues.length}</span>
+                      </button>
+                    )}
+                    <div>
+                      <label className={lc}>{t.colleagueName}</label>
+                      <input type="text" value={formData.colleagueName} onChange={e => setFormData(p => ({ ...p, colleagueName: e.target.value }))} className={ic} placeholder={t.colleagueName} />
+                    </div>
+                    <div>
+                      <label className={lc}>{t.colleagueRole}</label>
+                      <select
+                        value={formData.colleagueRole}
+                        onChange={e => setFormData(p => ({ ...p, colleagueRole: e.target.value }))}
+                        className={`${sc} cursor-pointer`}
+                      >
+                        {(["dj", "showman", "singer", "vipMusic"] as const).map(r => (
+                          <option key={r} value={r} className="bg-[#1a1a2e]">{roleLabel(r, t)}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className={lc}>{t.colleaguePhone}</label>
+                      <div className="flex gap-2">
+                        <input type="tel" value={formData.colleaguePhone} onChange={e => setFormData(p => ({ ...p, colleaguePhone: e.target.value }))} className={ic} placeholder="09123456789" dir="ltr" inputMode="tel" />
+                        <GlassButton onClick={() => handleContactPicker("colleague")} size="md"><Contact size={18} /></GlassButton>
+                      </div>
+                    </div>
+                    <div>
+                      <label className={lc}>{t.colleagueFee}</label>
+                      <input type="number" value={formData.colleagueFee || ""} onChange={e => setFormData(p => ({ ...p, colleagueFee: parseInt(e.target.value) || 0 }))} className={ic} placeholder="0" dir="ltr" inputMode="numeric" />
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-center py-6">
+                    <Disc3 size={32} className="mx-auto mb-2 text-gray-600" />
+                    <p className="text-xs text-gray-500">{t.noColleagueNeeded}</p>
+                  </div>
+                )}
+              </div>
             </>)}
             {formStep === 4 && (<><div><label className={lc}>{t.description}</label><textarea value={formData.description} onChange={e => setFormData(p => ({ ...p, description: e.target.value }))} className={`${ic} min-h-[200px] resize-none`} placeholder={locale === "fa" ? "توضیحات..." : "Notes..."} /></div><div className="bg-white/5 backdrop-blur-xl rounded-xl p-4 space-y-2"><h4 className="text-sm font-bold text-purple-300 mb-3">{locale === "fa" ? "خلاصه" : "Summary"}</h4><div className="flex justify-between text-xs"><span className="text-gray-400">{t.eventType}:</span><span className="text-white">{t[formData.eventType as keyof typeof t]}</span></div><div className="flex justify-between text-xs"><span className="text-gray-400">{t.shamsiDate}:</span><span className="text-white" dir="ltr">{formData.shamsiDate}</span></div>{formData.venue && <div className="flex justify-between text-xs"><span className="text-gray-400">{t.venue}:</span><span className="text-white">{formData.venue}</span></div>}{formData.customerName && <div className="flex justify-between text-xs"><span className="text-gray-400">{VENUE_TYPES.has(formData.eventType) ? t.restaurantName : t.customerName}:</span><span className="text-white">{formData.customerName}</span></div>}<div className="flex justify-between text-xs"><span className="text-gray-400">{t.fee}:</span><span className="text-emerald-300">{formData.fee.toLocaleString()}</span></div><div className="flex justify-between text-xs"><span className="text-gray-400">{t.status}:</span><span className={`px-2 py-0.5 rounded-full text-[10px] border ${STATUS_COLORS[formData.status] || ""}`}>{t[formData.status as keyof typeof t]}</span></div></div></>)}
           </div>
@@ -2421,7 +2632,7 @@ export default function DJApp() {
       </div>)}
 
       {/* FAB */}
-      {!showEventModal && !showDetailModal && !showDeleteConfirm && !showResetConfirm && !showLogoutConfirm && !selectedDate && !showQRModal && !showMonthPicker && !showReminderModal && !showBankCardModal && !showShareCard && !showCardQR && !showDatePicker && !showReminderDatePicker && !shareKind && !showProfileModal && !showCalendarTip && !showExitConfirm && !showAbout && !showCustomerForm && !showCustomerPicker && !showMusicianForm && !showMusicianPicker && !showProviderForm && !showProviderPicker && activeTab !== "settings" && (
+      {!showEventModal && !showDetailModal && !showDeleteConfirm && !showResetConfirm && !showLogoutConfirm && !selectedDate && !showQRModal && !showMonthPicker && !showReminderModal && !showBankCardModal && !showShareCard && !showCardQR && !showDatePicker && !showReminderDatePicker && !shareKind && !showProfileModal && !showCalendarTip && !showExitConfirm && !showAbout && !showCustomerForm && !showCustomerPicker && !showMusicianForm && !showMusicianPicker && !showProviderForm && !showProviderPicker && !showColleagueForm && !showColleaguePicker && activeTab !== "settings" && (
         <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-30"><GlassButton onClick={() => openNewEventForm()} variant="primary" size="lg" className="shadow-2xl shadow-purple-500/50"><Plus size={22} className="inline ml-2" />{t.newEvent}</GlassButton></div>
       )}
 

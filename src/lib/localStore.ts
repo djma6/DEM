@@ -20,6 +20,10 @@ export interface LocalEvent {
   musicianInstrument?: string | null;
   musicianPhone?: string | null;
   musicianFee?: number;
+  colleagueName?: string | null;
+  colleagueRole?: string | null;
+  colleaguePhone?: string | null;
+  colleagueFee?: number;
   description: string | null;
   customerName: string | null;
   customerPhone: string | null;
@@ -79,6 +83,17 @@ export interface LocalSoundProvider {
   notes?: string | null;
 }
 
+export type ColleagueRole = "dj" | "showman" | "singer" | "vipMusic";
+
+export interface LocalColleague {
+  id: number;
+  fullName: string;
+  role: ColleagueRole;
+  phone: string;
+  fee: number;
+  notes?: string | null;
+}
+
 export interface StoredProfile {
   name: string;
   phone: string;
@@ -93,6 +108,7 @@ const SHEBA_KEY = "djSheba";
 const CUSTOMERS_KEY = "djLocalCustomers";
 const MUSICIANS_KEY = "djLocalMusicians";
 const PROVIDERS_KEY = "djLocalSoundProviders";
+const COLLEAGUES_KEY = "djLocalColleagues";
 const SEQ_KEY = "djLocalSeq";
 const LEGACY_PROFILE_KEY = "djProfile";
 
@@ -326,6 +342,32 @@ export function updateLocalProvider(id: number, data: Partial<Omit<LocalSoundPro
 
 export function deleteLocalProvider(id: number): void {
   write(PROVIDERS_KEY, getLocalProviders().filter((x) => x.id !== id));
+}
+
+/* ── DJs & colleagues (local mirror when signed out) ── */
+
+export function getLocalColleagues(): LocalColleague[] {
+  return read<LocalColleague>(COLLEAGUES_KEY);
+}
+
+export function addLocalColleague(data: Omit<LocalColleague, "id">): LocalColleague {
+  const list = getLocalColleagues();
+  const created: LocalColleague = { ...data, id: nextId() };
+  list.push(created);
+  write(COLLEAGUES_KEY, list);
+  return created;
+}
+
+export function updateLocalColleague(id: number, data: Partial<Omit<LocalColleague, "id">>): void {
+  const list = getLocalColleagues();
+  const idx = list.findIndex((c) => c.id === id);
+  if (idx === -1) return;
+  list[idx] = { ...list[idx], ...data, id };
+  write(COLLEAGUES_KEY, list);
+}
+
+export function deleteLocalColleague(id: number): void {
+  write(COLLEAGUES_KEY, getLocalColleagues().filter((c) => c.id !== id));
 }
 
 /* ── Sheba / IBAN (always local) ── */

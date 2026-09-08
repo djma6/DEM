@@ -23,17 +23,43 @@ export const EMPTY_MUSICIAN: MusicianDraft = {
   fee: 0,
 };
 
+/** Service types a sound & light provider can offer. */
+export const EQUIPMENT_TYPES = [
+  "sound", "light", "soundLight", "cityTv", "danceFloor", "dutchStage",
+  "balloons", "barServing", "djRental", "ceremony", "services",
+  "operator", "artGroup",
+] as const;
+export type EquipmentType = (typeof EQUIPMENT_TYPES)[number];
+
+export function equipmentLabel(key: string, t: T): string {
+  switch (key) {
+    case "sound": return t.eqSound;
+    case "light": return t.eqLight;
+    case "soundLight": return t.eqSoundLight;
+    case "cityTv": return t.eqCityTv;
+    case "danceFloor": return t.eqDanceFloor;
+    case "dutchStage": return t.eqDutchStage;
+    case "balloons": return t.eqBalloons;
+    case "barServing": return t.eqBarServing;
+    case "djRental": return t.eqDjRental;
+    case "ceremony": return t.eqCeremony;
+    case "services": return t.eqServices;
+    case "operator": return t.eqOperator;
+    case "artGroup": return t.eqArtGroup;
+    default: return key;
+  }
+}
+
 export interface ProviderDraft {
   name: string;
   phone: string;
-  cost: number;
+  /** Service type key from EQUIPMENT_TYPES */
   equipment: string;
 }
 export const EMPTY_PROVIDER: ProviderDraft = {
   name: "",
   phone: "",
-  cost: 0,
-  equipment: "",
+  equipment: "soundLight",
 };
 
 const inputCls =
@@ -306,7 +332,11 @@ export function ProvidersSection({
                 <div className="flex items-start justify-between gap-2 mb-1.5">
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-bold text-white truncate">{pv.name}</p>
-                    {pv.equipment && <p className="text-[11px] text-gray-300 truncate mt-0.5">{pv.equipment}</p>}
+                    {pv.equipment && (
+                      <span className="inline-block mt-1 text-[9px] px-2 py-0.5 rounded-full border bg-blue-500/15 border-blue-400/30 text-blue-300">
+                        {equipmentLabel(pv.equipment, t)}
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0">
                     <button onClick={() => onEdit(pv)} className="w-7 h-7 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-blue-300 hover:bg-white/10 transition-all">
@@ -317,16 +347,9 @@ export function ProvidersSection({
                     </button>
                   </div>
                 </div>
-                <div className="flex items-center gap-3 flex-wrap">
-                  <a href={`tel:${pv.phone}`} className="text-[11px] text-emerald-300 flex items-center gap-1 hover:text-emerald-200" dir="ltr">
-                    <Phone size={10} />{pv.phone}
-                  </a>
-                  {pv.cost > 0 && (
-                    <span className="text-[11px] text-amber-300 flex items-center gap-1">
-                      <Wallet size={10} />{pv.cost.toLocaleString()}
-                    </span>
-                  )}
-                </div>
+                <a href={`tel:${pv.phone}`} className="text-[11px] text-emerald-300 flex items-center gap-1 hover:text-emerald-200" dir="ltr">
+                  <Phone size={10} />{pv.phone}
+                </a>
               </div>
             ))
           )}
@@ -379,12 +402,20 @@ export function ProviderFormModal({
             </div>
           </div>
           <div>
-            <label className={labelCls}>{t.providerCost}</label>
-            <input type="number" value={draft.cost || ""} onChange={e => setDraft(p => ({ ...p, cost: parseInt(e.target.value) || 0 }))} className={inputCls} placeholder="0" dir="ltr" inputMode="numeric" />
-          </div>
-          <div>
-            <label className={labelCls}>{t.providerEquipment}</label>
-            <textarea value={draft.equipment} onChange={e => setDraft(p => ({ ...p, equipment: e.target.value }))} className={`${inputCls} min-h-[70px] resize-none`} placeholder={t.providerEquipment} />
+            <label className={labelCls}>{t.equipmentType}</label>
+            <div className="relative">
+              <select
+                value={draft.equipment}
+                onChange={e => setDraft(p => ({ ...p, equipment: e.target.value }))}
+                className={`${inputCls} appearance-none cursor-pointer`}
+              >
+                {EQUIPMENT_TYPES.map(key => (
+                  <option key={key} value={key} className="bg-[#1a1a2e]">
+                    {equipmentLabel(key, t)}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
           <div className="flex gap-2 pt-1">
             <button onClick={onClose} className="flex-1 py-3 rounded-2xl bg-white/5 border border-white/10 text-sm text-gray-300 hover:bg-white/10 transition-all">{t.cancel}</button>
@@ -413,7 +444,7 @@ export function ProviderPickerModal({
   const filtered = providers.filter(pv => {
     const q = query.trim().toLowerCase();
     if (!q) return true;
-    return pv.name.toLowerCase().includes(q) || pv.phone.includes(q) || (pv.equipment || "").toLowerCase().includes(q);
+    return pv.name.toLowerCase().includes(q) || pv.phone.includes(q) || equipmentLabel(pv.equipment || "", t).toLowerCase().includes(q);
   });
 
   return (
@@ -449,12 +480,11 @@ export function ProviderPickerModal({
                     <p className="text-sm font-bold text-white truncate">{pv.name}</p>
                     <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                       <span className="text-[11px] text-emerald-300" dir="ltr">{pv.phone}</span>
-                      {pv.equipment && <span className="text-[10px] text-gray-400 truncate">· {pv.equipment}</span>}
+                      {pv.equipment && (
+                        <span className="text-[10px] text-blue-300">· {equipmentLabel(pv.equipment, t)}</span>
+                      )}
                     </div>
                   </div>
-                  {pv.cost > 0 && (
-                    <span className="text-[10px] text-amber-300 flex-shrink-0" dir="ltr">{pv.cost.toLocaleString()}</span>
-                  )}
                 </div>
               </button>
             ))

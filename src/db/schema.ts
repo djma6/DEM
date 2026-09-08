@@ -26,6 +26,10 @@ export const events = pgTable("events", {
   musicianInstrument: text("musician_instrument"),
   musicianPhone: text("musician_phone"),
   musicianFee: bigint("musician_fee", { mode: "number" }).notNull().default(0),
+  colleagueName: text("colleague_name"),
+  colleagueRole: text("colleague_role"),
+  colleaguePhone: text("colleague_phone"),
+  colleagueFee: bigint("colleague_fee", { mode: "number" }).notNull().default(0),
   description: text("description"),
   customerName: text("customer_name"),
   customerPhone: text("customer_phone"),
@@ -97,10 +101,22 @@ export const soundProviders = pgTable("sound_providers", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   phone: text("phone").notNull(),
-  /** Default equipment cost in Toman */
+  /** Legacy column: cost is entered per event, not stored on the provider */
   cost: bigint("cost", { mode: "number" }).notNull().default(0),
-  /** Usual equipment / requirements supplied */
+  /** Service type key, e.g. sound | light | soundLight | cityTv ... */
   equipment: text("equipment"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const colleagues = pgTable("colleagues", {
+  id: serial("id").primaryKey(),
+  fullName: text("full_name").notNull(),
+  /** dj | showman | singer | vipMusic */
+  role: text("role").notNull().default("dj"),
+  phone: text("phone").notNull(),
+  fee: bigint("fee", { mode: "number" }).notNull().default(0),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
