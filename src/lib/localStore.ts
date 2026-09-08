@@ -16,6 +16,10 @@ export interface LocalEvent {
   soundLightProviderPhone: string | null;
   soundLightRequirements: string | null;
   soundLightCost: number;
+  musicianName?: string | null;
+  musicianInstrument?: string | null;
+  musicianPhone?: string | null;
+  musicianFee?: number;
   description: string | null;
   customerName: string | null;
   customerPhone: string | null;
@@ -57,6 +61,24 @@ export interface LocalCustomer {
   notes?: string | null;
 }
 
+export interface LocalMusician {
+  id: number;
+  fullName: string;
+  instrument: string;
+  phone: string;
+  fee: number;
+  notes?: string | null;
+}
+
+export interface LocalSoundProvider {
+  id: number;
+  name: string;
+  phone: string;
+  cost: number;
+  equipment?: string | null;
+  notes?: string | null;
+}
+
 export interface StoredProfile {
   name: string;
   phone: string;
@@ -69,6 +91,8 @@ const REMINDERS_KEY = "djLocalReminders";
 const CARDS_KEY = "djBankCards";
 const SHEBA_KEY = "djSheba";
 const CUSTOMERS_KEY = "djLocalCustomers";
+const MUSICIANS_KEY = "djLocalMusicians";
+const PROVIDERS_KEY = "djLocalSoundProviders";
 const SEQ_KEY = "djLocalSeq";
 const LEGACY_PROFILE_KEY = "djProfile";
 
@@ -250,6 +274,58 @@ export function updateLocalCustomer(
 
 export function deleteLocalCustomer(id: number): void {
   write(CUSTOMERS_KEY, getLocalCustomers().filter((c) => c.id !== id));
+}
+
+/* ── Musicians (local mirror when signed out) ── */
+
+export function getLocalMusicians(): LocalMusician[] {
+  return read<LocalMusician>(MUSICIANS_KEY);
+}
+
+export function addLocalMusician(data: Omit<LocalMusician, "id">): LocalMusician {
+  const list = getLocalMusicians();
+  const created: LocalMusician = { ...data, id: nextId() };
+  list.push(created);
+  write(MUSICIANS_KEY, list);
+  return created;
+}
+
+export function updateLocalMusician(id: number, data: Partial<Omit<LocalMusician, "id">>): void {
+  const list = getLocalMusicians();
+  const idx = list.findIndex((m) => m.id === id);
+  if (idx === -1) return;
+  list[idx] = { ...list[idx], ...data, id };
+  write(MUSICIANS_KEY, list);
+}
+
+export function deleteLocalMusician(id: number): void {
+  write(MUSICIANS_KEY, getLocalMusicians().filter((m) => m.id !== id));
+}
+
+/* ── Sound & light providers (local mirror when signed out) ── */
+
+export function getLocalProviders(): LocalSoundProvider[] {
+  return read<LocalSoundProvider>(PROVIDERS_KEY);
+}
+
+export function addLocalProvider(data: Omit<LocalSoundProvider, "id">): LocalSoundProvider {
+  const list = getLocalProviders();
+  const created: LocalSoundProvider = { ...data, id: nextId() };
+  list.push(created);
+  write(PROVIDERS_KEY, list);
+  return created;
+}
+
+export function updateLocalProvider(id: number, data: Partial<Omit<LocalSoundProvider, "id">>): void {
+  const list = getLocalProviders();
+  const idx = list.findIndex((x) => x.id === id);
+  if (idx === -1) return;
+  list[idx] = { ...list[idx], ...data, id };
+  write(PROVIDERS_KEY, list);
+}
+
+export function deleteLocalProvider(id: number): void {
+  write(PROVIDERS_KEY, getLocalProviders().filter((x) => x.id !== id));
 }
 
 /* ── Sheba / IBAN (always local) ── */

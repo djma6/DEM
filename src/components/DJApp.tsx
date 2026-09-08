@@ -7,7 +7,7 @@ import {
   Globe, Speaker, Lightbulb, PartyPopper, LayoutDashboard, List, Settings,
   Download, Upload, RefreshCw, User, CheckCircle, Copy, QrCode, Contact,
   Bell, Share2, Mail, CreditCard as CardIcon, LogOut, Landmark, Smartphone,
-  ChevronUp, ChevronDown, Info, UtensilsCrossed,
+  ChevronUp, ChevronDown, Info, UtensilsCrossed, Music2,
 } from "lucide-react";
 import { translations, type Locale } from "@/lib/i18n";
 import { toJalaali, toGregorian, jalaaliMonthLength, formatJalaaliDate, formatGregorianDate, todayJalaali } from "@/lib/jalaali";
@@ -52,6 +52,10 @@ import AdSlider from "./AdSlider";
 import AboutModal from "./AboutModal";
 import CustomersSection, { CustomerFormModal, CustomerPickerModal, EMPTY_CUSTOMER, type CustomerDraft } from "./CustomersSection";
 import {
+  MusiciansSection, MusicianFormModal, MusicianPickerModal, EMPTY_MUSICIAN, type MusicianDraft,
+  ProvidersSection, ProviderFormModal, ProviderPickerModal, EMPTY_PROVIDER, type ProviderDraft,
+} from "./RosterSections";
+import {
   loadProfile,
   saveProfile,
   getLocalEvents,
@@ -70,12 +74,22 @@ import {
   addLocalCustomer,
   updateLocalCustomer,
   deleteLocalCustomer,
+  getLocalMusicians,
+  addLocalMusician,
+  updateLocalMusician,
+  deleteLocalMusician,
+  getLocalProviders,
+  addLocalProvider,
+  updateLocalProvider,
+  deleteLocalProvider,
   type LocalEvent,
   type LocalCustomer,
+  type LocalMusician,
+  type LocalSoundProvider,
 } from "@/lib/localStore";
 
 // ── Types ──
-interface EventData { id: number; eventType: string; title: string | null; shamsiDate: string; gregorianDate: string; venue: string | null; location: string | null; fee: number; deposit: number; equipmentNeeded: string | null; soundLightProvider: string | null; soundLightProviderPhone: string | null; soundLightRequirements: string | null; soundLightCost: number; description: string | null; customerName: string | null; customerPhone: string | null; guestCount: number; status: string; createdAt: string | null; updatedAt: string | null; }
+interface EventData { id: number; eventType: string; title: string | null; shamsiDate: string; gregorianDate: string; venue: string | null; location: string | null; fee: number; deposit: number; equipmentNeeded: string | null; soundLightProvider: string | null; soundLightProviderPhone: string | null; soundLightRequirements: string | null; soundLightCost: number; musicianName: string | null; musicianInstrument: string | null; musicianPhone: string | null; musicianFee: number; description: string | null; customerName: string | null; customerPhone: string | null; guestCount: number; status: string; createdAt: string | null; updatedAt: string | null; }
 interface Stats { totalEvents: number; unsettledEvents: number; totalRevenue: number; upcomingCount: number; upcomingEvents: EventData[]; }
 interface ReminderData { id: number; title: string; shamsiDate: string; gregorianDate: string; time: string | null; notifyBefore: string | null; contactName: string | null; contactPhone: string | null; description: string | null; completed: number; }
 interface BankCardData { id: number; title: string; cardNumber: string; sheba?: string; }
@@ -184,6 +198,17 @@ export default function DJApp() {
   const [customerDraft, setCustomerDraft] = useState<CustomerDraft>(EMPTY_CUSTOMER);
   const [editingCustomerId, setEditingCustomerId] = useState<number | null>(null);
   const [customerBusy, setCustomerBusy] = useState(false);
+  const [musicians, setMusicians] = useState<LocalMusician[]>([]);
+  const [showMusicianForm, setShowMusicianForm] = useState(false);
+  const [showMusicianPicker, setShowMusicianPicker] = useState(false);
+  const [musicianDraft, setMusicianDraft] = useState<MusicianDraft>(EMPTY_MUSICIAN);
+  const [editingMusicianId, setEditingMusicianId] = useState<number | null>(null);
+  const [providers, setProviders] = useState<LocalSoundProvider[]>([]);
+  const [showProviderForm, setShowProviderForm] = useState(false);
+  const [showProviderPicker, setShowProviderPicker] = useState(false);
+  const [providerDraft, setProviderDraft] = useState<ProviderDraft>(EMPTY_PROVIDER);
+  const [editingProviderId, setEditingProviderId] = useState<number | null>(null);
+  const [rosterBusy, setRosterBusy] = useState(false);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressFired = useRef(false);
 
@@ -227,7 +252,7 @@ export default function DJApp() {
   const [holidayTooltip, setHolidayTooltip] = useState<{ name: string; isHoliday: boolean } | null>(null);
   const [reminderDate, setReminderDate] = useState<string>("");
 
-  const [formData, setFormData] = useState({ eventType: "wedding", title: "", shamsiDate: "", gregorianDate: "", venue: "", location: "", fee: 0, deposit: 0, equipmentNeeded: "", soundLightProvider: "", soundLightProviderPhone: "", soundLightRequirements: "", soundLightCost: 0, soundLightEnabled: false, description: "", customerName: "", customerPhone: "", guestCount: 0, status: "pending" });
+  const [formData, setFormData] = useState({ eventType: "wedding", title: "", shamsiDate: "", gregorianDate: "", venue: "", location: "", fee: 0, deposit: 0, equipmentNeeded: "", soundLightProvider: "", soundLightProviderPhone: "", soundLightRequirements: "", soundLightCost: 0, soundLightEnabled: false, musicianEnabled: false, musicianName: "", musicianInstrument: "", musicianPhone: "", musicianFee: 0, description: "", customerName: "", customerPhone: "", guestCount: 0, status: "pending" });
   const [reminderForm, setReminderForm] = useState({ title: "", shamsiDate: "", gregorianDate: "", time: "", notifyBefore: "0", contactName: "", contactPhone: "", description: "" });
   const [bankCardForm, setBankCardForm] = useState({ title: "", cardNumber: "", sheba: "" });
 
@@ -343,11 +368,16 @@ export default function DJApp() {
       showCardQR || showBankCardModal || showReminderModal || showDatePicker ||
       showReminderDatePicker || showProfileModal || showCalendarTip ||
       showExitConfirm || showAbout || showCustomerForm || showCustomerPicker ||
+      showMusicianForm || showMusicianPicker || showProviderForm || showProviderPicker ||
       !!shareKind || !!selectedDate;
 
     const closeTopOverlay = () => {
       if (showExitConfirm) { setShowExitConfirm(false); return; }
       if (showAbout) { setShowAbout(false); return; }
+      if (showMusicianPicker) { setShowMusicianPicker(false); return; }
+      if (showProviderPicker) { setShowProviderPicker(false); return; }
+      if (showMusicianForm) { setShowMusicianForm(false); setEditingMusicianId(null); return; }
+      if (showProviderForm) { setShowProviderForm(false); setEditingProviderId(null); return; }
       if (showCustomerPicker) { setShowCustomerPicker(false); return; }
       if (showCustomerForm) { setShowCustomerForm(false); setEditingCustomerId(null); return; }
       if (showDatePicker) { setShowDatePicker(false); return; }
@@ -393,6 +423,7 @@ export default function DJApp() {
     showBankCardModal, showReminderModal, showDatePicker, showReminderDatePicker,
     showProfileModal, showCalendarTip, showExitConfirm, showAbout,
     showCustomerForm, showCustomerPicker,
+    showMusicianForm, showMusicianPicker, showProviderForm, showProviderPicker,
   ]);
 
   // Show the calendar long-press tip the first time the tab is opened.
@@ -520,12 +551,34 @@ export default function DJApp() {
     }
   }, [onlineMode]);
 
+  const fetchMusicians = useCallback(async () => {
+    if (!onlineMode) { setMusicians(getLocalMusicians()); return; }
+    try {
+      const r = await fetch("/api/musicians");
+      setMusicians(r.ok ? ((await r.json()) as LocalMusician[]) : []);
+    } catch (e) {
+      console.error("Fetch musicians failed:", e);
+      setMusicians([]);
+    }
+  }, [onlineMode]);
+
+  const fetchProviders = useCallback(async () => {
+    if (!onlineMode) { setProviders(getLocalProviders()); return; }
+    try {
+      const r = await fetch("/api/sound-providers");
+      setProviders(r.ok ? ((await r.json()) as LocalSoundProvider[]) : []);
+    } catch (e) {
+      console.error("Fetch providers failed:", e);
+      setProviders([]);
+    }
+  }, [onlineMode]);
+
   // Bank cards are always stored on the device only — never uploaded
   const fetchBankCards = useCallback(async () => {
     setBankCards(getBankCards() as unknown as BankCardData[]);
   }, []);
 
-  useEffect(() => { if (!showSetup) { fetchEvents(); fetchReminders(); fetchBankCards(); fetchCustomers(); } }, [fetchEvents, fetchReminders, fetchBankCards, fetchCustomers, showSetup]);
+  useEffect(() => { if (!showSetup) { fetchEvents(); fetchReminders(); fetchBankCards(); fetchCustomers(); fetchMusicians(); fetchProviders(); } }, [fetchEvents, fetchReminders, fetchBankCards, fetchCustomers, fetchMusicians, fetchProviders, showSetup]);
 
   // Daily notifications for today's + tomorrow's events (once per day)
   useEffect(() => {
@@ -614,8 +667,11 @@ export default function DJApp() {
   const getMonthEvents = (): EventData[] => { const evList = Array.isArray(events) ? events : []; if (calendarType === "shamsi") { const p = `${shamsiMonth.year}/${String(shamsiMonth.month).padStart(2, "0")}/`; return evList.filter(e => e.shamsiDate.startsWith(p) && e.status !== "cancelled").sort((a, b) => a.shamsiDate.localeCompare(b.shamsiDate)); } else { const p = `${gregMonth.year}-${String(gregMonth.month).padStart(2, "0")}-`; return evList.filter(e => e.gregorianDate.startsWith(p) && e.status !== "cancelled").sort((a, b) => a.gregorianDate.localeCompare(b.gregorianDate)); } };
 
   // Form
-  const openNewEventForm = (date?: string) => { setEditingEvent(null); const sd = date || todayStr; const p = sd.split("/"); const g = toGregorian(parseInt(p[0]), parseInt(p[1]), parseInt(p[2])); setFormData({ eventType: "wedding", title: "", shamsiDate: sd, gregorianDate: formatGregorianDate(g.gy, g.gm, g.gd), venue: "", location: "", fee: 0, deposit: 0, equipmentNeeded: "", soundLightProvider: "", soundLightProviderPhone: "", soundLightRequirements: "", soundLightCost: 0, soundLightEnabled: false, description: "", customerName: "", customerPhone: "", guestCount: 0, status: "pending" }); setFormStep(0); setShowEventModal(true); };
-  const openEditEventForm = (ev: EventData) => { setEditingEvent(ev); setFormData({ eventType: ev.eventType, title: ev.title || "", shamsiDate: ev.shamsiDate, gregorianDate: ev.gregorianDate, venue: ev.venue || "", location: ev.location || "", fee: ev.fee, deposit: ev.deposit, equipmentNeeded: ev.equipmentNeeded || "", soundLightProvider: ev.soundLightProvider || "", soundLightProviderPhone: "", soundLightRequirements: ev.soundLightRequirements || "", soundLightCost: ev.soundLightCost, soundLightEnabled: !!(ev.soundLightProvider || ev.soundLightRequirements || ev.soundLightCost), description: ev.description || "", customerName: ev.customerName || "", customerPhone: ev.customerPhone || "", guestCount: ev.guestCount || 0, status: ev.status }); setFormStep(0); setShowEventModal(true); };
+  const openNewEventForm = (date?: string) => { setEditingEvent(null); const sd = date || todayStr; const p = sd.split("/"); const g = toGregorian(parseInt(p[0]), parseInt(p[1]), parseInt(p[2])); setFormData({ eventType: "wedding", title: "", shamsiDate: sd, gregorianDate: formatGregorianDate(g.gy, g.gm, g.gd), venue: "", location: "", fee: 0, deposit: 0, equipmentNeeded: "", soundLightProvider: "", soundLightProviderPhone: "", soundLightRequirements: "", soundLightCost: 0, soundLightEnabled: false, musicianEnabled: false, musicianName: "", musicianInstrument: "", musicianPhone: "", musicianFee: 0, description: "", customerName: "", customerPhone: "", guestCount: 0, status: "pending" }); setFormStep(0); setShowEventModal(true); };
+  const openEditEventForm = (ev: EventData) => { setEditingEvent(ev); setFormData({ eventType: ev.eventType, title: ev.title || "", shamsiDate: ev.shamsiDate, gregorianDate: ev.gregorianDate, venue: ev.venue || "", location: ev.location || "", fee: ev.fee, deposit: ev.deposit, equipmentNeeded: ev.equipmentNeeded || "", soundLightProvider: ev.soundLightProvider || "", soundLightProviderPhone: "", soundLightRequirements: ev.soundLightRequirements || "", soundLightCost: ev.soundLightCost, soundLightEnabled: !!(ev.soundLightProvider || ev.soundLightRequirements || ev.soundLightCost),
+      musicianEnabled: !!(ev.musicianName || ev.musicianInstrument || ev.musicianFee),
+      musicianName: ev.musicianName || "", musicianInstrument: ev.musicianInstrument || "",
+      musicianPhone: ev.musicianPhone || "", musicianFee: ev.musicianFee || 0, description: ev.description || "", customerName: ev.customerName || "", customerPhone: ev.customerPhone || "", guestCount: ev.guestCount || 0, status: ev.status }); setFormStep(0); setShowEventModal(true); };
   // Shamsi → Gregorian (auto-sync)
   const handleShamsiDateChange = (val: string) => {
     const norm = val.replace(/[-.]/g, "/").replace(/[^\d/]/g, "");
@@ -670,6 +726,14 @@ export default function DJApp() {
         payload.soundLightProviderPhone = "";
         payload.soundLightRequirements = "";
         payload.soundLightCost = 0;
+      }
+      if (!formData.musicianEnabled) {
+        payload.musicianName = "";
+        payload.musicianInstrument = "";
+        payload.musicianPhone = "";
+        payload.musicianFee = 0;
+      } else {
+        payload.musicianFee = Number(formData.musicianFee) || 0;
       }
 
       const wasEditingId = editingEvent?.id;
@@ -731,7 +795,7 @@ export default function DJApp() {
   };
   const handleReset = async () => { try { await fetch("/api/reset", { method: "DELETE" }); localStorage.clear(); setShowResetConfirm(false); window.location.reload(); } catch (e) { console.error(e); } };
 
-  const handleContactPicker = async (target: "customer" | "provider" | "reminder") => { try { if ("contacts" in navigator) { const c = await (navigator as any).contacts.select(["name", "tel"], { multiple: false }); if (c.length > 0) { const name = c[0].name?.[0] || ""; const tel = c[0].tel?.[0] || ""; if (target === "customer") setFormData(p => ({ ...p, customerName: name || p.customerName, customerPhone: tel || p.customerPhone })); else if (target === "provider") setFormData(p => ({ ...p, soundLightProvider: name || p.soundLightProvider, soundLightProviderPhone: tel || p.soundLightProviderPhone })); else if (target === "reminder") setReminderForm(p => ({ ...p, contactName: name || p.contactName, contactPhone: tel || p.contactPhone })); } } else alert(t.contactPickerNotSupported); } catch { alert(t.contactPickerFailed); } };
+  const handleContactPicker = async (target: "customer" | "provider" | "reminder" | "musician") => { try { if ("contacts" in navigator) { const c = await (navigator as any).contacts.select(["name", "tel"], { multiple: false }); if (c.length > 0) { const name = c[0].name?.[0] || ""; const tel = c[0].tel?.[0] || ""; if (target === "customer") setFormData(p => ({ ...p, customerName: name || p.customerName, customerPhone: tel || p.customerPhone })); else if (target === "provider") setFormData(p => ({ ...p, soundLightProvider: name || p.soundLightProvider, soundLightProviderPhone: tel || p.soundLightProviderPhone })); else if (target === "reminder") setReminderForm(p => ({ ...p, contactName: name || p.contactName, contactPhone: tel || p.contactPhone })); else if (target === "musician") setFormData(p => ({ ...p, musicianName: name || p.musicianName, musicianPhone: tel || p.musicianPhone })); } } else alert(t.contactPickerNotSupported); } catch { alert(t.contactPickerFailed); } };
 
   // Reminder
   const openReminderForm = (dateStr: string) => {
@@ -1026,6 +1090,148 @@ export default function DJApp() {
             fullName: picked[0].name?.[0] || p.fullName,
             phone: (picked[0].tel?.[0] || p.phone).replace(/\s/g, ""),
           }));
+        }
+      } else {
+        alert(t.contactPickerNotSupported);
+      }
+    } catch {
+      alert(t.contactPickerFailed);
+    }
+  };
+
+  /* ── Musicians ── */
+  const openNewMusician = () => { setMusicianDraft(EMPTY_MUSICIAN); setEditingMusicianId(null); setShowMusicianForm(true); };
+  const openEditMusician = (m: LocalMusician) => {
+    setMusicianDraft({ fullName: m.fullName, instrument: m.instrument, phone: m.phone, fee: m.fee });
+    setEditingMusicianId(m.id);
+    setShowMusicianForm(true);
+  };
+
+  const handleSaveMusician = async () => {
+    const d = musicianDraft;
+    if (!d.fullName.trim() || !d.instrument.trim() || !d.phone.trim()) return;
+    setRosterBusy(true);
+    try {
+      if (onlineMode) {
+        const url = editingMusicianId ? `/api/musicians/${editingMusicianId}` : "/api/musicians";
+        const res = await fetch(url, {
+          method: editingMusicianId ? "PUT" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(d),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      } else if (editingMusicianId) {
+        updateLocalMusician(editingMusicianId, d);
+      } else {
+        addLocalMusician(d);
+      }
+      setShowMusicianForm(false);
+      setEditingMusicianId(null);
+      setMusicianDraft(EMPTY_MUSICIAN);
+      await fetchMusicians();
+    } catch (e) {
+      console.error("Save musician failed:", e);
+      alert(locale === "fa" ? "ذخیره نوازنده ناموفق بود" : "Could not save the musician");
+    } finally {
+      setRosterBusy(false);
+    }
+  };
+
+  const handleDeleteMusician = async (id: number) => {
+    if (!confirm(t.deleteMusicianConfirm)) return;
+    try {
+      if (onlineMode) await fetch(`/api/musicians/${id}`, { method: "DELETE" });
+      else deleteLocalMusician(id);
+      await fetchMusicians();
+    } catch (e) { console.error("Delete musician failed:", e); }
+  };
+
+  /** Fills the event form from a saved musician. */
+  const applyMusicianToEvent = (m: LocalMusician) => {
+    setFormData(p => ({
+      ...p,
+      musicianEnabled: true,
+      musicianName: m.fullName,
+      musicianInstrument: m.instrument,
+      musicianPhone: m.phone,
+      musicianFee: m.fee || 0,
+    }));
+  };
+
+  /* ── Sound & light providers ── */
+  const openNewProvider = () => { setProviderDraft(EMPTY_PROVIDER); setEditingProviderId(null); setShowProviderForm(true); };
+  const openEditProvider = (pv: LocalSoundProvider) => {
+    setProviderDraft({ name: pv.name, phone: pv.phone, cost: pv.cost, equipment: pv.equipment || "" });
+    setEditingProviderId(pv.id);
+    setShowProviderForm(true);
+  };
+
+  const handleSaveProvider = async () => {
+    const d = providerDraft;
+    if (!d.name.trim() || !d.phone.trim()) return;
+    setRosterBusy(true);
+    try {
+      if (onlineMode) {
+        const url = editingProviderId ? `/api/sound-providers/${editingProviderId}` : "/api/sound-providers";
+        const res = await fetch(url, {
+          method: editingProviderId ? "PUT" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(d),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      } else if (editingProviderId) {
+        updateLocalProvider(editingProviderId, d);
+      } else {
+        addLocalProvider(d);
+      }
+      setShowProviderForm(false);
+      setEditingProviderId(null);
+      setProviderDraft(EMPTY_PROVIDER);
+      await fetchProviders();
+    } catch (e) {
+      console.error("Save provider failed:", e);
+      alert(locale === "fa" ? "ذخیره تامین‌کننده ناموفق بود" : "Could not save the provider");
+    } finally {
+      setRosterBusy(false);
+    }
+  };
+
+  const handleDeleteProvider = async (id: number) => {
+    if (!confirm(t.deleteProviderConfirm)) return;
+    try {
+      if (onlineMode) await fetch(`/api/sound-providers/${id}`, { method: "DELETE" });
+      else deleteLocalProvider(id);
+      await fetchProviders();
+    } catch (e) { console.error("Delete provider failed:", e); }
+  };
+
+  /** Fills the event form from a saved sound & light provider. */
+  const applyProviderToEvent = (pv: LocalSoundProvider) => {
+    setFormData(p => ({
+      ...p,
+      soundLightEnabled: true,
+      soundLightProvider: pv.name,
+      soundLightProviderPhone: pv.phone,
+      soundLightCost: pv.cost || 0,
+      soundLightRequirements: pv.equipment || p.soundLightRequirements,
+    }));
+  };
+
+  /** Shared contacts picker for the roster forms. */
+  const pickContactFor = async (target: "musician" | "provider") => {
+    try {
+      if ("contacts" in navigator) {
+        const picked = await (navigator as unknown as {
+          contacts: { select: (p: string[], o: { multiple: boolean }) => Promise<{ name?: string[]; tel?: string[] }[]> };
+        }).contacts.select(["name", "tel"], { multiple: false });
+        if (picked.length > 0) {
+          const name = picked[0].name?.[0] || "";
+          const tel = (picked[0].tel?.[0] || "").replace(/\s/g, "");
+          if (target === "musician") {
+            setMusicianDraft(p => ({ ...p, fullName: name || p.fullName, phone: tel || p.phone }));
+          } else {
+            setProviderDraft(p => ({ ...p, name: name || p.name, phone: tel || p.phone }));
+          }
         }
       } else {
         alert(t.contactPickerNotSupported);
@@ -1421,6 +1627,24 @@ export default function DJApp() {
               onDelete={handleDeleteCustomer}
             />
 
+            {/* Musicians */}
+            <MusiciansSection
+              locale={locale}
+              musicians={musicians}
+              onAdd={openNewMusician}
+              onEdit={openEditMusician}
+              onDelete={handleDeleteMusician}
+            />
+
+            {/* Sound & light providers */}
+            <ProvidersSection
+              locale={locale}
+              providers={providers}
+              onAdd={openNewProvider}
+              onEdit={openEditProvider}
+              onDelete={handleDeleteProvider}
+            />
+
             {/* Bank Cards — above Google account */}
             <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-4">
               <h3 className="text-base font-bold text-purple-300 mb-4 flex items-center gap-2"><CardIcon size={18} />{t.bankCards}</h3>
@@ -1614,6 +1838,54 @@ export default function DJApp() {
           </div>
         </div>
       </div>)}
+
+      {/* Musician create / edit */}
+      {showMusicianForm && (
+        <MusicianFormModal
+          locale={locale}
+          draft={musicianDraft}
+          setDraft={setMusicianDraft}
+          isEditing={editingMusicianId !== null}
+          busy={rosterBusy}
+          onPickContact={() => pickContactFor("musician")}
+          onSave={handleSaveMusician}
+          onClose={() => { setShowMusicianForm(false); setEditingMusicianId(null); }}
+        />
+      )}
+
+      {/* Musician picker (event form) */}
+      {showMusicianPicker && (
+        <MusicianPickerModal
+          locale={locale}
+          musicians={musicians}
+          onSelect={applyMusicianToEvent}
+          onClose={() => setShowMusicianPicker(false)}
+        />
+      )}
+
+      {/* Provider create / edit */}
+      {showProviderForm && (
+        <ProviderFormModal
+          locale={locale}
+          draft={providerDraft}
+          setDraft={setProviderDraft}
+          isEditing={editingProviderId !== null}
+          busy={rosterBusy}
+          onPickContact={() => pickContactFor("provider")}
+          onSave={handleSaveProvider}
+          onClose={() => { setShowProviderForm(false); setEditingProviderId(null); }}
+        />
+      )}
+
+      {/* Provider picker (event form) */}
+      {showProviderPicker && (
+        <ProviderPickerModal
+          locale={locale}
+          providers={providers}
+          onSelect={applyProviderToEvent}
+          onClose={() => setShowProviderPicker(false)}
+        />
+      )}
 
       {/* Customer create / edit */}
       {showCustomerForm && (
@@ -1925,6 +2197,38 @@ export default function DJApp() {
             {(selectedEvent.customerName || selectedEvent.customerPhone || selectedEvent.guestCount > 0) && <div className="bg-white/5 backdrop-blur-xl rounded-xl p-4 space-y-2">{selectedEvent.customerName && <div className="flex items-center gap-2 text-sm"><Users size={14} className="text-blue-400" /><span className="text-gray-400">{VENUE_TYPES.has(selectedEvent.eventType) ? t.restaurantName : t.customerName}:</span><span className="text-white">{selectedEvent.customerName}</span></div>}{selectedEvent.customerPhone && <div className="flex items-center gap-2 text-sm"><Phone size={14} className="text-emerald-400" /><span className="text-gray-400">{VENUE_TYPES.has(selectedEvent.eventType) ? t.venueContact : t.customerPhone}:</span><span className="text-white" dir="ltr">{selectedEvent.customerPhone}</span></div>}{selectedEvent.guestCount > 0 && <div className="flex items-center gap-2 text-sm"><Users size={14} className="text-amber-400" /><span className="text-gray-400">{VENUE_TYPES.has(selectedEvent.eventType) ? t.restaurantCapacity : t.guestCount}:</span><span className="text-white">{selectedEvent.guestCount.toLocaleString()}</span></div>}</div>}
             <div className="bg-white/5 backdrop-blur-xl rounded-xl p-4 space-y-2"><div className="flex items-center gap-2 text-sm"><DollarSign size={14} className="text-emerald-400" /><span className="text-gray-400">{t.fee}:</span><span className="text-emerald-300 font-medium">{selectedEvent.fee.toLocaleString()}</span></div><div className="flex items-center gap-2 text-sm"><CreditCard size={14} className="text-blue-400" /><span className="text-gray-400">{t.deposit}:</span><span className="text-blue-300 font-medium">{selectedEvent.deposit.toLocaleString()}</span></div>{selectedEvent.fee - selectedEvent.deposit > 0 && <div className="flex items-center gap-2 text-sm"><AlertCircle size={14} className="text-amber-400" /><span className="text-gray-400">{t.remaining}:</span><span className="text-amber-300 font-bold">{(selectedEvent.fee - selectedEvent.deposit).toLocaleString()}</span></div>}</div>
             {(selectedEvent.soundLightProvider || selectedEvent.soundLightRequirements || selectedEvent.equipmentNeeded) && <div className="bg-white/5 backdrop-blur-xl rounded-xl p-4 space-y-2">{selectedEvent.soundLightProvider && <div className="flex items-start gap-2 text-sm"><Speaker size={14} className="text-purple-400 mt-0.5" /><span className="text-gray-400 flex-shrink-0">{t.soundLightProvider}:</span><span className="text-white">{selectedEvent.soundLightProvider}</span></div>}{selectedEvent.soundLightProviderPhone && <div className="flex items-start gap-2 text-sm"><Phone size={14} className="text-blue-400 mt-0.5" /><span className="text-gray-400 flex-shrink-0">{locale === "fa" ? "شماره تامین‌کننده" : "Provider Phone"}:</span><span className="text-white" dir="ltr">{selectedEvent.soundLightProviderPhone}</span></div>}{selectedEvent.soundLightRequirements && <div className="flex items-start gap-2 text-sm"><Lightbulb size={14} className="text-amber-400 mt-0.5" /><span className="text-gray-400 flex-shrink-0">{t.soundLightRequirements}:</span><span className="text-white">{selectedEvent.soundLightRequirements}</span></div>}{selectedEvent.equipmentNeeded && <div className="flex items-start gap-2 text-sm"><Music size={14} className="text-red-400 mt-0.5" /><span className="text-gray-400 flex-shrink-0">{t.equipmentNeeded}:</span><span className="text-white">{selectedEvent.equipmentNeeded}</span></div>}</div>}
+            {(selectedEvent.musicianName || selectedEvent.musicianInstrument || selectedEvent.musicianFee > 0) && (
+              <div className="bg-white/5 backdrop-blur-xl rounded-xl p-4 space-y-2">
+                {selectedEvent.musicianName && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <Music2 size={14} className="text-pink-400" />
+                    <span className="text-gray-400">{t.musicianName}:</span>
+                    <span className="text-white">{selectedEvent.musicianName}</span>
+                  </div>
+                )}
+                {selectedEvent.musicianInstrument && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <Music size={14} className="text-purple-400" />
+                    <span className="text-gray-400">{t.instrument}:</span>
+                    <span className="text-white">{selectedEvent.musicianInstrument}</span>
+                  </div>
+                )}
+                {selectedEvent.musicianPhone && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <Phone size={14} className="text-emerald-400" />
+                    <span className="text-gray-400">{t.musicianPhone}:</span>
+                    <span className="text-white" dir="ltr">{selectedEvent.musicianPhone}</span>
+                  </div>
+                )}
+                {selectedEvent.musicianFee > 0 && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <DollarSign size={14} className="text-amber-400" />
+                    <span className="text-gray-400">{t.musicianFee}:</span>
+                    <span className="text-amber-300 font-medium">{selectedEvent.musicianFee.toLocaleString()}</span>
+                  </div>
+                )}
+              </div>
+            )}
             {selectedEvent.description && <div className="bg-white/5 backdrop-blur-xl rounded-xl p-4"><div className="flex items-start gap-2 text-sm"><FileText size={14} className="text-gray-400 mt-0.5" /><p className="text-gray-300 whitespace-pre-wrap">{selectedEvent.description}</p></div></div>}
             <div className="flex gap-3 pt-2"><GlassButton onClick={() => generateEventQR(selectedEvent)} variant="primary" className="flex-1"><QrCode size={16} className="inline ml-2" />QR</GlassButton><GlassButton onClick={() => { setShowDetailModal(false); openEditEventForm(selectedEvent); }} className="flex-1"><Edit3 size={16} className="inline ml-2" />{t.editEvent}</GlassButton><GlassButton onClick={() => setShowDeleteConfirm(true)} variant="danger" className="flex-1"><Trash2 size={16} className="inline ml-2" />{t.delete}</GlassButton></div>
           </div>
@@ -2032,6 +2336,16 @@ export default function DJApp() {
                 </button>
               </div>
               {formData.soundLightEnabled && (<>
+                {providers.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowProviderPicker(true)}
+                    className="w-full py-3 rounded-2xl bg-gradient-to-r from-blue-600/25 to-purple-600/25 border border-blue-400/40 text-sm font-bold text-blue-100 flex items-center justify-center gap-2 active:scale-[0.98] transition-all"
+                  >
+                    <Speaker size={16} />{t.selectProvider}
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-500/25 text-blue-200">{providers.length}</span>
+                  </button>
+                )}
                 <div><label className={lc}>{t.soundLightProvider}</label><div className="flex gap-2"><input type="text" value={formData.soundLightProvider} onChange={e => setFormData(p => ({ ...p, soundLightProvider: e.target.value }))} className={ic} placeholder={locale === "fa" ? "نام تامین‌کننده" : "Provider name"} /><GlassButton onClick={() => handleContactPicker("provider")} size="md"><Contact size={18} /></GlassButton></div></div>
                 <div><label className={lc}>{locale === "fa" ? "شماره تامین‌کننده" : "Provider Phone"}</label><input type="tel" value={formData.soundLightProviderPhone} onChange={e => setFormData(p => ({ ...p, soundLightProviderPhone: e.target.value }))} className={ic} placeholder="09123456789" dir="ltr" /></div>
                 <div><label className={lc}>{t.soundLightRequirements}</label><textarea value={formData.soundLightRequirements} onChange={e => setFormData(p => ({ ...p, soundLightRequirements: e.target.value }))} className={`${ic} min-h-[80px] resize-none`} placeholder={locale === "fa" ? "نیازهای صوت و نور" : "Sound & light requirements"} /></div>
@@ -2039,6 +2353,62 @@ export default function DJApp() {
                 <div><label className={lc}>{t.soundLightCost}</label><input type="number" value={formData.soundLightCost || ""} onChange={e => setFormData(p => ({ ...p, soundLightCost: parseInt(e.target.value) || 0 }))} className={ic} placeholder={locale === "fa" ? "هزینه (تومان)" : "Cost (Toman)"} dir="ltr" /></div>
               </>)}
               {!formData.soundLightEnabled && (<div className="text-center py-6"><Speaker size={32} className="mx-auto mb-2 text-gray-600" /><p className="text-xs text-gray-500">{locale === "fa" ? "این برنامه نیاز به تامین‌کننده صوت و نور ندارد" : "This event doesn't need sound & light provider"}</p></div>)}
+
+              {/* ── Musician ── */}
+              <div className="pt-4 mt-2 border-t border-white/10 space-y-4">
+                <div className="flex items-center justify-between bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <Music2 size={16} className="text-pink-400" />
+                    <span className="text-sm font-medium text-gray-200">{t.needMusician}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setFormData(p => ({ ...p, musicianEnabled: !p.musicianEnabled }))}
+                    className={`relative w-12 h-7 rounded-full transition-all duration-300 ${formData.musicianEnabled ? "bg-pink-600" : "bg-gray-600"}`}
+                  >
+                    <span className={`absolute top-0.5 w-6 h-6 rounded-full bg-white shadow-md transition-all duration-300 ${formData.musicianEnabled ? (isRtl ? "right-0.5" : "left-[22px]") : (isRtl ? "right-[22px]" : "left-0.5")}`} />
+                  </button>
+                </div>
+
+                {formData.musicianEnabled ? (
+                  <>
+                    {musicians.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowMusicianPicker(true)}
+                        className="w-full py-3 rounded-2xl bg-gradient-to-r from-pink-600/25 to-purple-600/25 border border-pink-400/40 text-sm font-bold text-pink-100 flex items-center justify-center gap-2 active:scale-[0.98] transition-all"
+                      >
+                        <Music2 size={16} />{t.selectMusician}
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-pink-500/25 text-pink-200">{musicians.length}</span>
+                      </button>
+                    )}
+                    <div>
+                      <label className={lc}>{t.musicianName}</label>
+                      <input type="text" value={formData.musicianName} onChange={e => setFormData(p => ({ ...p, musicianName: e.target.value }))} className={ic} placeholder={t.musicianName} />
+                    </div>
+                    <div>
+                      <label className={lc}>{t.instrument}</label>
+                      <input type="text" value={formData.musicianInstrument} onChange={e => setFormData(p => ({ ...p, musicianInstrument: e.target.value }))} className={ic} placeholder={locale === "fa" ? "مثلا: تنبک، ویولن" : "e.g. Violin"} />
+                    </div>
+                    <div>
+                      <label className={lc}>{t.musicianPhone}</label>
+                      <div className="flex gap-2">
+                        <input type="tel" value={formData.musicianPhone} onChange={e => setFormData(p => ({ ...p, musicianPhone: e.target.value }))} className={ic} placeholder="09123456789" dir="ltr" inputMode="tel" />
+                        <GlassButton onClick={() => handleContactPicker("musician")} size="md"><Contact size={18} /></GlassButton>
+                      </div>
+                    </div>
+                    <div>
+                      <label className={lc}>{t.musicianFee}</label>
+                      <input type="number" value={formData.musicianFee || ""} onChange={e => setFormData(p => ({ ...p, musicianFee: parseInt(e.target.value) || 0 }))} className={ic} placeholder="0" dir="ltr" inputMode="numeric" />
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-center py-6">
+                    <Music2 size={32} className="mx-auto mb-2 text-gray-600" />
+                    <p className="text-xs text-gray-500">{t.noMusicianNeeded}</p>
+                  </div>
+                )}
+              </div>
             </>)}
             {formStep === 4 && (<><div><label className={lc}>{t.description}</label><textarea value={formData.description} onChange={e => setFormData(p => ({ ...p, description: e.target.value }))} className={`${ic} min-h-[200px] resize-none`} placeholder={locale === "fa" ? "توضیحات..." : "Notes..."} /></div><div className="bg-white/5 backdrop-blur-xl rounded-xl p-4 space-y-2"><h4 className="text-sm font-bold text-purple-300 mb-3">{locale === "fa" ? "خلاصه" : "Summary"}</h4><div className="flex justify-between text-xs"><span className="text-gray-400">{t.eventType}:</span><span className="text-white">{t[formData.eventType as keyof typeof t]}</span></div><div className="flex justify-between text-xs"><span className="text-gray-400">{t.shamsiDate}:</span><span className="text-white" dir="ltr">{formData.shamsiDate}</span></div>{formData.venue && <div className="flex justify-between text-xs"><span className="text-gray-400">{t.venue}:</span><span className="text-white">{formData.venue}</span></div>}{formData.customerName && <div className="flex justify-between text-xs"><span className="text-gray-400">{VENUE_TYPES.has(formData.eventType) ? t.restaurantName : t.customerName}:</span><span className="text-white">{formData.customerName}</span></div>}<div className="flex justify-between text-xs"><span className="text-gray-400">{t.fee}:</span><span className="text-emerald-300">{formData.fee.toLocaleString()}</span></div><div className="flex justify-between text-xs"><span className="text-gray-400">{t.status}:</span><span className={`px-2 py-0.5 rounded-full text-[10px] border ${STATUS_COLORS[formData.status] || ""}`}>{t[formData.status as keyof typeof t]}</span></div></div></>)}
           </div>
@@ -2051,7 +2421,7 @@ export default function DJApp() {
       </div>)}
 
       {/* FAB */}
-      {!showEventModal && !showDetailModal && !showDeleteConfirm && !showResetConfirm && !showLogoutConfirm && !selectedDate && !showQRModal && !showMonthPicker && !showReminderModal && !showBankCardModal && !showShareCard && !showCardQR && !showDatePicker && !showReminderDatePicker && !shareKind && !showProfileModal && !showCalendarTip && !showExitConfirm && !showAbout && !showCustomerForm && !showCustomerPicker && activeTab !== "settings" && (
+      {!showEventModal && !showDetailModal && !showDeleteConfirm && !showResetConfirm && !showLogoutConfirm && !selectedDate && !showQRModal && !showMonthPicker && !showReminderModal && !showBankCardModal && !showShareCard && !showCardQR && !showDatePicker && !showReminderDatePicker && !shareKind && !showProfileModal && !showCalendarTip && !showExitConfirm && !showAbout && !showCustomerForm && !showCustomerPicker && !showMusicianForm && !showMusicianPicker && !showProviderForm && !showProviderPicker && activeTab !== "settings" && (
         <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-30"><GlassButton onClick={() => openNewEventForm()} variant="primary" size="lg" className="shadow-2xl shadow-purple-500/50"><Plus size={22} className="inline ml-2" />{t.newEvent}</GlassButton></div>
       )}
 

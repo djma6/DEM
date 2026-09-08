@@ -22,6 +22,10 @@ export const events = pgTable("events", {
   soundLightProviderPhone: text("sound_light_provider_phone"),
   soundLightRequirements: text("sound_light_requirements"),
   soundLightCost: bigint("sound_light_cost", { mode: "number" }).notNull().default(0),
+  musicianName: text("musician_name"),
+  musicianInstrument: text("musician_instrument"),
+  musicianPhone: text("musician_phone"),
+  musicianFee: bigint("musician_fee", { mode: "number" }).notNull().default(0),
   description: text("description"),
   customerName: text("customer_name"),
   customerPhone: text("customer_phone"),
@@ -71,6 +75,32 @@ export const customers = pgTable("customers", {
   category: text("category").notNull().default("other"),
   /** Name of the venue/company for the chosen category */
   businessName: text("business_name"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const musicians = pgTable("musicians", {
+  id: serial("id").primaryKey(),
+  fullName: text("full_name").notNull(),
+  /** Instrument played, e.g. تنبک / ویولن */
+  instrument: text("instrument").notNull(),
+  phone: text("phone").notNull(),
+  /** Default performance fee in Toman */
+  fee: bigint("fee", { mode: "number" }).notNull().default(0),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const soundProviders = pgTable("sound_providers", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  phone: text("phone").notNull(),
+  /** Default equipment cost in Toman */
+  cost: bigint("cost", { mode: "number" }).notNull().default(0),
+  /** Usual equipment / requirements supplied */
+  equipment: text("equipment"),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
